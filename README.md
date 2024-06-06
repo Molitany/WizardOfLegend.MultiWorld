@@ -1,0 +1,1 @@
+# WizardOfLegend.MultiWorld

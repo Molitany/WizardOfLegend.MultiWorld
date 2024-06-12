@@ -1,19 +1,20 @@
 ﻿using Archipelago.MultiClient.Net;
+using Archipelago.MultiClient.Net.BounceFeatures.DeathLink;
 using Archipelago.MultiClient.Net.Enums;
-using MultiWorld.Archipelago.Receivers;
+using MultiWorld.ArchipelagoClient.Receivers;
 using MultiWorld.UI;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 
-namespace MultiWorld.Archipelago;
+namespace MultiWorld.ArchipelagoClient;
 
 public class ArchipelagoManager
 {
-    public static string SlotName;
+    public static string SlotName = "Molitany";
     public static string Password;
-    public static string Url = "archipelago.gg";
-    public static string Port = "38281";
+    public static string Url = "localhost";
+    public static string Port = "61462";
 
     public bool Connected { get; private set; }
     public string ServerAddress => Connected ? _session.Socket.Uri.ToString() : string.Empty;
@@ -25,15 +26,14 @@ public class ArchipelagoManager
     private string _lastServerUrl;
     private string _lastPlayerName;
     private string _lastPassword;
-
     private readonly Dictionary<string, long> archipelagoLocations = [];
     private readonly List<ArchipelagoItem> archipelagoItems = [];
 
-    private readonly HintReceiver _hintReceiver = new();
-    private readonly LocationReceiver _locationReceiver = new();
-    private readonly MessageReceiver _messageReceiver = new();
-    private readonly ItemReceiver _itemReceiver = new();
-
+    private DeathLinkService deathLink;
+    private HintReceiver _hintReceiver = new();
+    private LocationReceiver _locationReceiver = new();
+    private MessageReceiver _messageReceiver = new();
+    private ItemReceiver _itemReceiver = new();
     public static readonly object receiverLock = new();
 
     #region Connection
@@ -44,6 +44,7 @@ public class ArchipelagoManager
         _lastPlayerName = playerName;
         _lastPassword = password;
         LoginResult result;
+        string resultMessage;
         try
         {
             // Log.LogInfo type load error in here somewhere
@@ -53,59 +54,82 @@ public class ArchipelagoManager
             _session.Locations.CheckedLocationsUpdated += _locationReceiver.OnReceive;
             _session.Socket.SocketClosed += OnDisconnect;
             result = _session.TryConnectAndLogin("Wizard of Legend", playerName, ItemsHandlingFlags.AllItems, new Version(0, 4, 6), null, null, password);
+            MultiWorldPlugin.Log.LogMessage($"{result}");
         }
         catch (Exception ex)
         {
-            OnDisconnect(ex.Message);
-            return $"Failed to connect: {ex.Message}";
+            result = new LoginFailure(ex.GetBaseException().Message);
         }
 
-        ArchipelagoConnectButtonController.connectPanel.SetActive(false);
+        if (!result.Successful)
+        {
+            Connected = false;
+            var failure = result as LoginFailure;
+            resultMessage = "Archipelago connection failed: ";
+            if (failure.Errors.Length > 0)
+                resultMessage += failure.Errors[0];
+            else
+                resultMessage += "Unknown reason";
+
+            return resultMessage;
+        }
+
+        Connected = true;
+        resultMessage = "Archipelago connection successful";
+        ArchipelagoConnectButtonController.ConnectPanel.SetActive(false);
         ArchipelagoConnectButtonController.IsOpened = false;
         OnConnect(result as LoginSuccessful, playerName);
-        return "Archipelago multiworld connected";
+        return resultMessage;
     }
 
     private void OnConnect(LoginSuccessful loginSuccessful, string playerName)
     {
         GameSettings settings = new()
         {
-            Config = ((JObject)loginSuccessful.SlotData["config"]).ToObject<Config>(),
-            RequiredEnding = int.Parse(loginSuccessful.SlotData["ending"].ToString()),
-            DeathLinkEnabled = bool.Parse(loginSuccessful.SlotData["death_link"].ToString()),
+            //Config = ((JObject)loginSuccessful.SlotData["config"]).ToObject<Config>(),
+            //RequiredEnding = int.Parse(loginSuccessful.SlotData["ending"].ToString()),
+            DeathLinkEnabled = loginSuccessful.SlotData["deathLink"].ToString() == "1",
             PlayerName = playerName
         };
-
         //Deathlink
-
+        deathLink = _session.CreateDeathLinkService();
+        deathLink.OnDeathLinkReceived += ReceivedDeath;
+        EnableDeathLink(settings.DeathLinkEnabled);
         //Locations
-        ArchipelagoLocation[] locations = ((JArray)loginSuccessful.SlotData["locations"]).ToObject<ArchipelagoLocation[]>();
-        Dictionary<string, string> mappedItems = [];
         archipelagoLocations.Clear();
         archipelagoItems.Clear();
 
-        foreach (var location in locations)
-        {
-            archipelagoLocations.Add(location.id, location.archipelago_id);
-
-            //if (location.player_name == settings.PlayerName)
-            //    if (ItemNameExists(location.name, out string itemId))
-            //        mappedItems.Add(location.id, itemId);
-            //    else
-            //    {
-            //        MultiWorldPlugin.Log.LogError($"Item {location.name} does not exist");
-            //        continue;
-            //    }
-            //else
-            //{
-            //    mappedItems.Add(location.id, $"AP{archipelagoItems.Count}");
-            //    archipelagoItems.Add(new ArchipelagoItem(location.name, location.player_name, (ArchipelagoItem.ItemType)location.type));
-            //}
-        }
-
         _session.DataStorage.TrackHints(_hintReceiver.OnReceive, true);
-        // ingame on connect
+        MultiWorldPlugin.OnConnect(settings);
     }
+
+    #region Death link
+
+    public void SendDeath()
+    {
+        if (Connected)
+        {
+            deathLink.SendDeathLink(new Archipelago.MultiClient.Net.BounceFeatures.DeathLink.DeathLink(MultiWorldPlugin.MultiworldSettings.PlayerName));
+        }
+    }
+
+    public void EnableDeathLink(bool deathLinkEnabled)
+    {
+        if (Connected)
+        {
+            if (deathLinkEnabled)
+                deathLink.EnableDeathLink();
+            else
+                deathLink.DisableDeathLink();
+        }
+    }
+
+    private void ReceivedDeath(Archipelago.MultiClient.Net.BounceFeatures.DeathLink.DeathLink deathLink)
+    {
+        MultiWorldPlugin.DeathLinkManager.ReceiveDeath(deathLink.Source);
+    }
+
+    #endregion Death link
 
     public void Disconnect()
     {
@@ -179,4 +203,10 @@ public class ArchipelagoManager
         locationId = null;
         return false;
     }
+
+    public void SendMessage(string v)
+    {
+        throw new NotImplementedException();
+    }
+
 }

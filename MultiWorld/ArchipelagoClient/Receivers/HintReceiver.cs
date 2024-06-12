@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace MultiWorld.Archipelago.Receivers;
+namespace MultiWorld.ArchipelagoClient.Receivers;
 
 public class HintReceiver : IReceiver<Hint[]>
 {

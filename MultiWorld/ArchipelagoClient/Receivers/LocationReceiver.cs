@@ -1,6 +1,6 @@
 ﻿using System.Collections.ObjectModel;
 
-namespace MultiWorld.Archipelago.Receivers;
+namespace MultiWorld.ArchipelagoClient.Receivers;
 
 public class LocationReceiver : IReceiver<ReadOnlyCollection<long>>
 {

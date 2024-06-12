@@ -1,4 +1,4 @@
-﻿namespace MultiWorld.Archipelago.Receivers;
+﻿namespace MultiWorld.ArchipelagoClient.Receivers;
 internal interface IReceiver<T>
 {
     public void OnReceive(T type);

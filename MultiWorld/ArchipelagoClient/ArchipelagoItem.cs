@@ -1,4 +1,4 @@
-﻿namespace MultiWorld.Archipelago;
+﻿namespace MultiWorld.ArchipelagoClient;
 
 internal class ArchipelagoItem
 {

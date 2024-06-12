@@ -1,6 +1,6 @@
 ﻿using Archipelago.MultiClient.Net.Helpers;
 
-namespace MultiWorld.Archipelago.Receivers;
+namespace MultiWorld.ArchipelagoClient.Receivers;
 
 public class ItemReceiver : IReceiver<ReceivedItemsHelper>
 {

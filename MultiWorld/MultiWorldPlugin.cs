@@ -4,11 +4,13 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using MultiWorld.UI;
-using MultiWorld.Archipelago;
+using MultiWorld.ArchipelagoClient;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using System;
+using MultiWorld.DeathLink;
+using MultiWorld.Notification;
 
 namespace MultiWorld;
 
@@ -17,25 +19,20 @@ namespace MultiWorld;
 public class MultiWorldPlugin : BaseUnityPlugin
 {
     public static readonly ManualLogSource Log = BepInEx.Logging.Logger.CreateLogSource("MultiWorld");
-    public static ArchipelagoManager ArchipelagoManager { get; private set; }
     public static MultiWorldPlugin Instance { get; private set; }
+    public static ArchipelagoManager ArchipelagoManager { get; private set; }
+    public static DeathLinkManager DeathLinkManager { get; private set; }
+    public static GameSettings MultiworldSettings { get; private set; }
+    public static NotificationManager NotificationManager { get; private set; }
     public Dictionary<string, GameData.StoredItemData> Relics { get; private set; } = [];
     public Dictionary<string, GameData.StoredSkillData> Skills { get; private set; } = [];
     public Dictionary<string, bool> Outfits { get; private set; } = [];
     public static bool InGame => GameController.activePlayers.Any();
+    public static int allowedTier = 0;
     public static Player Player;
     public static bool IsConnected;
 
-    public static GameObject ChatBox { get; private set; }
-    public static int allowedTier = 0;
-
     private bool UIDisplayed = false;
-
-    public static BepInEx.Configuration.ConfigEntry<string> SlotNameEntry { get; set; }
-    public static BepInEx.Configuration.ConfigEntry<string> ServerNameEntry { get; set; }
-    public static BepInEx.Configuration.ConfigEntry<string> PortEntry { get; set; }
-    public static BepInEx.Configuration.ConfigEntry<string> PasswordEntry { get; set; }
-
     public struct ArchipelagoItem
     {
         public string name;
@@ -46,11 +43,23 @@ public class MultiWorldPlugin : BaseUnityPlugin
     public void Awake()
     {
         Instance = this;
-        ArchipelagoManager = new ArchipelagoManager();
-        On.NextLevelLoader.LoadNextLevel += NextLevelLoader_LoadNextLevel;
+        ArchipelagoManager = new();
+        DeathLinkManager = new();
+        NotificationManager = new();
         AssetBundleHelper.LoadBundle();
         CreateArchipelagoInfo();
+        On.NextLevelLoader.LoadNextLevel += NextLevelLoader_LoadNextLevel;
         On.TitleScreen.HandleMenuStates += TitleScreen_HandleMenuStates;
+        On.Player.DeadState.OnEnter += Player_DeadState_OnEnter;
+    }
+
+    private void Player_DeadState_OnEnter(On.Player.DeadState.orig_OnEnter orig, Player.DeadState self)
+    {
+        orig(self);
+        if (DeathLinkManager.CurrentStatus == DeathLinkStatus.Nothing)
+            DeathLinkManager.SendDeath();
+        else if (DeathLinkManager.CurrentStatus == DeathLinkStatus.Killing)
+            DeathLinkManager.CurrentStatus = DeathLinkStatus.Nothing;
     }
 
     private void TitleScreen_HandleMenuStates(On.TitleScreen.orig_HandleMenuStates orig, TitleScreen self)
@@ -88,7 +97,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
             Log.LogMessage($"scene: {SceneManager.GetActiveScene().name}");
             CreateConnectUI();
         }
-        if (GameObject.Find("TitleScreen") && !UIDisplayed)
+        if (GameObject.Find("TitleScreen") && !GameObject.Find("ArchipelagoConnectButtonController") && !UIDisplayed)
         {
             Log.LogMessage($"firing the UI");
             CreateConnectUI();
@@ -100,6 +109,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
             Relics = GameDataManager.gameData.itemDataDictionary;
             Outfits = GameDataManager.gameData.outfitDataDictionary;
             Player = GameController.activePlayers[0];
+            CreateChatBoxtUI();
         }
     }
 
@@ -115,16 +125,26 @@ public class MultiWorldPlugin : BaseUnityPlugin
 
     private void ConnectButton()
     {
-        var url = ArchipelagoManager.Url + ArchipelagoManager.Port;
+        var url = $"{ArchipelagoManager.Url}:{ArchipelagoManager.Port}";
 
         Log.LogInfo($"Server {ArchipelagoManager.Url} Port: {ArchipelagoManager.Port} Slot: {ArchipelagoManager.SlotName} Password: {ArchipelagoManager.Password}");
 
-        Log.LogInfo(ArchipelagoManager.Connect(url, ArchipelagoManager.SlotName, ArchipelagoManager.Password));
+        Log.LogMessage(ArchipelagoManager.Connect(url, ArchipelagoManager.SlotName, ArchipelagoManager.Password));
     }
 
     private void CreateConnectUI()
     {
         var ConnectUI = new GameObject("ArchipelagoConnectButtonController");
         ConnectUI.AddComponent<ArchipelagoConnectButtonController>();
+    }
+    private void CreateChatBoxtUI()
+    {
+        var ChatBox = new GameObject("ChatBoxController");
+        ChatBox.AddComponent<ChatBoxController>();
+    }
+
+    public static void OnConnect(GameSettings settings)
+    {
+        MultiworldSettings = settings;
     }
 }

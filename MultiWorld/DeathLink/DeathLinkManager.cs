@@ -21,12 +21,14 @@ public class DeathLinkManager
 
     public void Update()
     {
-        if (DeathLinkEnabled && CurrentStatus == DeathLinkStatus.Queued && MultiWorldPlugin.InGame)
+        if (MultiWorldPlugin.ArchipelagoManager.Connected && DeathLinkEnabled && CurrentStatus == DeathLinkStatus.Queued)
         {
             CurrentStatus = DeathLinkStatus.Killing;
-            var deathLinkAtkInfo = new AttackInfo();
-            deathLinkAtkInfo.skillID = "DeathLink";
-            deathLinkAtkInfo.damage = 9999;
+            var deathLinkAtkInfo = new AttackInfo
+            {
+                skillID = "DeathLink",
+                damage = 9999
+            };
 
             foreach (var entityGameObject in GameController.allies)
             {

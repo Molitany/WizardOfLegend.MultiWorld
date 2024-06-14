@@ -4,16 +4,9 @@ using System.Linq;
 using System.Text;
 
 namespace MultiWorld;
-public class QueuedItem
+public class QueuedItem(string itemId, int index, string player)
 {
-    public QueuedItem(string itemId, int index, string player)
-    {
-        this.itemId = itemId;
-        this.index = index;
-        this.player = player;
-    }
-
-    public string itemId;
-    public int index;
-    public string player;
+    public string itemId = itemId;
+    public int index = index;
+    public string player = player;
 }

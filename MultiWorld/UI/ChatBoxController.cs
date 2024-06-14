@@ -10,17 +10,18 @@ namespace MultiWorld.UI;
 public class ChatBoxController : MonoBehaviour
 {
     public static GameObject ChatBox;
+    public static bool Writing;
     private GameObject ChatLog;
     private Text ChatLogContent;
     private GameObject ChatInput;
     public string AssetName = "ChatBox";
     public string BundleName = "connectbundle";
-    public bool IsActive = true;
+    public bool IsActive = false;
 
     private readonly Font font = TextManager.fontDict[ChaosLang.English].font;
     private string command;
     private Coroutine coroutine;
-    private bool caseInsensitive = true;
+    private readonly bool caseInsensitive = true;
     private Dictionary<string, Action<string[]>> availableCommands;
 
     public void Start()
@@ -36,21 +37,25 @@ public class ChatBoxController : MonoBehaviour
         {
             text.font = font;
         }
+        ChatInput.SetActive(false);
     }
 
-    private void Update()
+    public void Update()
     {
-        if (Input.GetKeyDown(KeyCode.Return))
+        if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
         {
             if (IsActive)
             {
                 SendCommand(command);
+                Writing = false;
             }
             else
             {
                 ChatInput.SetActive(true);
                 ChatInput.GetComponent<InputField>().ActivateInputField();
-                StopCoroutine(coroutine);
+                Writing = true;
+                if (coroutine != null)
+                    StopCoroutine(coroutine);
                 ChatLog.GetComponent<CanvasGroup>().alpha = 1f;
             }
             IsActive = !IsActive;
@@ -208,7 +213,8 @@ public class ChatBoxController : MonoBehaviour
             return;
         }
 
-        MultiWorldPlugin.ArchipelagoManager.SendMessage(string.Concat(parameters.Skip(1).ToArray()));
+        WriteToChatLog(string.Join(" ", parameters));
+        MultiWorldPlugin.ArchipelagoManager.SendMessage(string.Join(" ", parameters));
     }
 
     private void CreateInteractivity()
@@ -217,17 +223,20 @@ public class ChatBoxController : MonoBehaviour
         ChatInput.GetComponent<InputField>().onValueChanged.AddListener(value => command = value);
     }
 
-    private void SendCommand(string command)
+    private void SendCommand(string input)
     {
+        if (input == null) return;
         ChatInput.SetActive(false);
-        var parameters = command.Split(' ');
-        availableCommands[caseInsensitive ? parameters[0].ToLower() : parameters[0]](parameters.Skip(1).ToArray());
+        var parameters = input.Split(' ');
+        var command = caseInsensitive ? parameters[0].ToLower() : parameters[0];
+        if (availableCommands.TryGetValue(command, out var action))
+            action(parameters.Skip(1).ToArray());
         coroutine = StartCoroutine(FadeOut());
     }
 
-    private void WriteToChatLog(string command)
+    public void WriteToChatLog(string input)
     {
-        ChatLogContent.text += $"{command}\n";
+        ChatLogContent.text += $"{input}\n";
     }
 
     private IEnumerator FadeOut()

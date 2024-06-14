@@ -1,11 +1,13 @@
 ﻿using Archipelago.MultiClient.Net;
 using Archipelago.MultiClient.Net.BounceFeatures.DeathLink;
 using Archipelago.MultiClient.Net.Enums;
+using Archipelago.MultiClient.Net.Packets;
 using MultiWorld.ArchipelagoClient.Receivers;
 using MultiWorld.UI;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
+using static System.Collections.Specialized.BitVector32;
 
 namespace MultiWorld.ArchipelagoClient;
 
@@ -14,7 +16,7 @@ public class ArchipelagoManager
     public static string SlotName = "Molitany";
     public static string Password;
     public static string Url = "localhost";
-    public static string Port = "61462";
+    public static string Port = "55752";
 
     public bool Connected { get; private set; }
     public string ServerAddress => Connected ? _session.Socket.Uri.ToString() : string.Empty;
@@ -26,14 +28,14 @@ public class ArchipelagoManager
     private string _lastServerUrl;
     private string _lastPlayerName;
     private string _lastPassword;
-    private readonly Dictionary<string, long> archipelagoLocations = [];
-    private readonly List<ArchipelagoItem> archipelagoItems = [];
+    private readonly Dictionary<string, long> _archipelagoLocations = [];
+    private readonly List<ArchipelagoItem> _archipelagoItems = [];
 
-    private DeathLinkService deathLink;
-    private HintReceiver _hintReceiver = new();
-    private LocationReceiver _locationReceiver = new();
-    private MessageReceiver _messageReceiver = new();
-    private ItemReceiver _itemReceiver = new();
+    private DeathLinkService _deathLink;
+    private readonly HintReceiver _hintReceiver = new();
+    private readonly LocationReceiver _locationReceiver = new();
+    private readonly MessageReceiver _messageReceiver = new();
+    private readonly ItemReceiver _itemReceiver = new();
     public static readonly object receiverLock = new();
 
     #region Connection
@@ -53,7 +55,7 @@ public class ArchipelagoManager
             _session.Socket.PacketReceived += _messageReceiver.OnReceive;
             _session.Locations.CheckedLocationsUpdated += _locationReceiver.OnReceive;
             _session.Socket.SocketClosed += OnDisconnect;
-            result = _session.TryConnectAndLogin("Wizard of Legend", playerName, ItemsHandlingFlags.AllItems, new Version(0, 4, 6), null, null, password);
+            result = _session.TryConnectAndLogin("Wizard of Legend", playerName, ItemsHandlingFlags.AllItems, new Version(0, 4, 6), password: password);
             MultiWorldPlugin.Log.LogMessage($"{result}");
         }
         catch (Exception ex)
@@ -92,44 +94,16 @@ public class ArchipelagoManager
             PlayerName = playerName
         };
         //Deathlink
-        deathLink = _session.CreateDeathLinkService();
-        deathLink.OnDeathLinkReceived += ReceivedDeath;
+        _deathLink = _session.CreateDeathLinkService();
+        _deathLink.OnDeathLinkReceived += ReceivedDeath;
         EnableDeathLink(settings.DeathLinkEnabled);
         //Locations
-        archipelagoLocations.Clear();
-        archipelagoItems.Clear();
+        _archipelagoLocations.Clear();
+        _archipelagoItems.Clear();
 
         _session.DataStorage.TrackHints(_hintReceiver.OnReceive, true);
         MultiWorldPlugin.OnConnect(settings);
     }
-
-    #region Death link
-
-    public void SendDeath()
-    {
-        if (Connected)
-        {
-            deathLink.SendDeathLink(new Archipelago.MultiClient.Net.BounceFeatures.DeathLink.DeathLink(MultiWorldPlugin.MultiworldSettings.PlayerName));
-        }
-    }
-
-    public void EnableDeathLink(bool deathLinkEnabled)
-    {
-        if (Connected)
-        {
-            if (deathLinkEnabled)
-                deathLink.EnableDeathLink();
-            else
-                deathLink.DisableDeathLink();
-        }
-    }
-
-    private void ReceivedDeath(Archipelago.MultiClient.Net.BounceFeatures.DeathLink.DeathLink deathLink)
-    {
-        MultiWorldPlugin.DeathLinkManager.ReceiveDeath(deathLink.Source);
-    }
-
-    #endregion Death link
 
     public void Disconnect()
     {
@@ -152,12 +126,13 @@ public class ArchipelagoManager
     {
         lock (receiverLock)
         {
-            if (MultiWorldPlugin.InGame)
+            if (MultiWorldPlugin.Player)
             {
                 _hintReceiver.Update();
                 _itemReceiver.Update();
                 _locationReceiver.Update();
             }
+
             _messageReceiver.Update(); // Doesn't need to be in game
         }
     }
@@ -174,24 +149,39 @@ public class ArchipelagoManager
     }
     #endregion
 
-    //public bool ItemNameExists(string itemName, out string itemId)
-    //{
-    //    foreach (var item in list of WoL items)
-    //    {
-    //        if (item.Name == itemName)
-    //        {
-    //            itemId = item.id;
-    //            return true;
-    //        }
-    //    }
-    //    itemId = null;
-    //    return false;
-    //}
+
+    #region Death link
+
+    public void SendDeath()
+    {
+        if (Connected)
+        {
+            _deathLink.SendDeathLink(new Archipelago.MultiClient.Net.BounceFeatures.DeathLink.DeathLink(MultiWorldPlugin.MultiworldSettings.PlayerName));
+        }
+    }
+
+    public void EnableDeathLink(bool deathLinkEnabled)
+    {
+        if (Connected)
+        {
+            if (deathLinkEnabled)
+                _deathLink.EnableDeathLink();
+            else
+                _deathLink.DisableDeathLink();
+        }
+    }
+
+    private void ReceivedDeath(Archipelago.MultiClient.Net.BounceFeatures.DeathLink.DeathLink deathLink)
+    {
+        MultiWorldPlugin.DeathLinkManager.ReceiveDeath(deathLink.Source);
+    }
+
+    #endregion Death link
 
     public bool LocationIdExists(long archpelagoId, out string locationId)
     {
         //consider switching key and value potentially
-        foreach (var locationPair in archipelagoLocations)
+        foreach (var locationPair in _archipelagoLocations)
         {
             if (locationPair.Value == archpelagoId)
             {
@@ -204,9 +194,19 @@ public class ArchipelagoManager
         return false;
     }
 
-    public void SendMessage(string v)
+    public void SendMessage(string message)
     {
-        throw new NotImplementedException();
+        if (Connected)
+        {
+            var packet = new SayPacket
+            {
+                Text = message
+            };
+            _session.Socket.SendPacket(packet);
+        }
     }
 
+    public string GetItemNameFromId(long itemId) => _session.Items.GetItemName(itemId);
+
+    public string GetLocationNameFromId(long itemId) => _session.Locations.GetLocationNameFromId(itemId);
 }

@@ -1,21 +1,46 @@
-﻿using System.Collections.ObjectModel;
+﻿using Archipelago.MultiClient.Net.Models;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using UnityEngine.SocialPlatforms.Impl;
 
 namespace MultiWorld.ArchipelagoClient.Receivers;
 
 public class LocationReceiver : IReceiver<ReadOnlyCollection<long>>
 {
-    public void ClearQueue()
-    {
-        throw new System.NotImplementedException();
-    }
+    private readonly List<string> locationQueue = [];
+    public void ClearQueue() => locationQueue.Clear();
 
-    public void OnReceive(ReadOnlyCollection<long> type)
+    public void OnReceive(ReadOnlyCollection<long> locations)
     {
-        throw new System.NotImplementedException();
+        lock (ArchipelagoManager.receiverLock)
+        {
+            foreach (long apId in locations)
+            {
+                if (MultiWorldPlugin.ArchipelagoManager.LocationIdExists(apId, out string locationId))
+                {
+                    locationQueue.Add(locationId);
+                    MultiWorldPlugin.Log.LogMessage("Queueing check for location: " + locationId);
+                }
+                else
+                {
+                    MultiWorldPlugin.Log.LogError("Received invalid checked location: " + apId);
+                }
+            }
+        }
     }
 
     public void Update()
     {
-        throw new System.NotImplementedException();
+        if (locationQueue.Count == 0)
+            return;
+
+        MultiWorldPlugin.Log.LogWarning("Processing location queue");
+
+        foreach (string locationId in locationQueue)
+        {
+            MultiWorldPlugin.NotificationManager.DisplayText($"Location update loop: {locationId}");
+        }
+
+        ClearQueue();
     }
 }

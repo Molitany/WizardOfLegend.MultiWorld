@@ -24,35 +24,17 @@ public class MultiWorldPlugin : BaseUnityPlugin
     public static DeathLinkManager DeathLinkManager { get; private set; }
     public static GameSettings MultiworldSettings { get; private set; }
     public static NotificationManager NotificationManager { get; private set; }
-    public Dictionary<string, GameData.StoredItemData> Relics { get; private set; } = [];
-    public Dictionary<string, GameData.StoredSkillData> Skills { get; private set; } = [];
-    public Dictionary<string, bool> Outfits { get; private set; } = [];
+    public static ChatBoxController ChatBoxController { get; private set; }
     public static bool InGame => GameController.activePlayers.Any();
     public static int allowedTier = 0;
     public static Player Player;
     public static bool IsConnected;
 
-    private bool UIDisplayed = false;
-    public struct ArchipelagoItem
-    {
-        public string name;
-        public string type;
-        public string classification;
-    }
-
-    public void Awake()
-    {
-        Instance = this;
-        ArchipelagoManager = new();
-        DeathLinkManager = new();
-        NotificationManager = new();
-        AssetBundleHelper.LoadBundle();
-        CreateArchipelagoInfo();
-        On.NextLevelLoader.LoadNextLevel += NextLevelLoader_LoadNextLevel;
-        On.TitleScreen.HandleMenuStates += TitleScreen_HandleMenuStates;
-        On.Player.DeadState.OnEnter += Player_DeadState_OnEnter;
-    }
-
+    private static Dictionary<string, GameData.StoredItemData> Relics { get; set; }
+    private static Dictionary<string, Outfit> Outfits { get; set; }
+    private static Dictionary<string, Player.SkillState> Skills { get; set; }
+   
+    #region Hooks
     private void Player_DeadState_OnEnter(On.Player.DeadState.orig_OnEnter orig, Player.DeadState self)
     {
         orig(self);
@@ -69,6 +51,13 @@ public class MultiWorldPlugin : BaseUnityPlugin
         orig(self);
     }
 
+    private void Player_RunState_Update(On.Player.RunState.orig_Update orig, Player.RunState self)
+    {
+        if (ChatBoxController.Writing)
+            return;
+        orig(self);
+    }
+
     private void NextLevelLoader_LoadNextLevel(On.NextLevelLoader.orig_LoadNextLevel orig, NextLevelLoader self)
     {
         if (Application.loadedLevelName.Contains("BossLevel") && GameController.tierCount + 1 > allowedTier)
@@ -79,6 +68,21 @@ public class MultiWorldPlugin : BaseUnityPlugin
         orig(self);
 
         // possibly use stageCount to cancel the next floor if we dont have that unlock yet, send to "Hub"?
+    }
+    #endregion
+
+    public void Awake()
+    {
+        Instance = this;
+        ArchipelagoManager = new();
+        DeathLinkManager = new();
+        NotificationManager = new();
+        AssetBundleHelper.LoadBundle();
+        CreateArchipelagoInfo();
+        On.NextLevelLoader.LoadNextLevel += NextLevelLoader_LoadNextLevel;
+        On.TitleScreen.HandleMenuStates += TitleScreen_HandleMenuStates;
+        On.Player.DeadState.OnEnter += Player_DeadState_OnEnter;
+        On.Player.RunState.Update += Player_RunState_Update;
     }
 
 
@@ -97,22 +101,24 @@ public class MultiWorldPlugin : BaseUnityPlugin
             Log.LogMessage($"scene: {SceneManager.GetActiveScene().name}");
             CreateConnectUI();
         }
-        if (GameObject.Find("TitleScreen") && !GameObject.Find("ArchipelagoConnectButtonController") && !UIDisplayed)
+        if (Player)
         {
-            Log.LogMessage($"firing the UI");
-            CreateConnectUI();
-            UIDisplayed = true;
+            DeathLinkManager.Update();
         }
-        if (Player) GameUI.BroadcastNoticeMessage(Player.transform.position.ToString());
         if (InGame && Player == null)
         {
-            Relics = GameDataManager.gameData.itemDataDictionary;
-            Outfits = GameDataManager.gameData.outfitDataDictionary;
             Player = GameController.activePlayers[0];
+            Relics = GameDataManager.gameData.itemDataDictionary;
+            Outfits = Outfit.outfitDict;
+            Skills = Player.skillsDict;
+            Log.LogMessage($"firing the UI");
+            CreateConnectUI();
             CreateChatBoxtUI();
         }
+        ArchipelagoManager.UpdateAllReceivers();
     }
 
+    #region UI
     private void CreateArchipelagoInfo()
     {
         Log.LogMessage($"ArchipelagoManager && ArchipelagoConnectButtonController");
@@ -140,7 +146,62 @@ public class MultiWorldPlugin : BaseUnityPlugin
     private void CreateChatBoxtUI()
     {
         var ChatBox = new GameObject("ChatBoxController");
-        ChatBox.AddComponent<ChatBoxController>();
+        ChatBoxController = ChatBox.AddComponent<ChatBoxController>();
+    }
+    #endregion
+
+    public static bool CheckItemExists(string item)
+    {
+        if (Relics.ContainsKey(item))
+            return true;
+        else if (item.EndsWith("Signature"))
+        {
+            if (Skills.ContainsKey(item.Replace("Signature", "")))
+                return true;
+        }
+        else if (Skills.ContainsKey(item))
+            return true;
+        else if (Outfits.ContainsKey(item))
+            return true;
+        else if (item.Contains("Boss tier"))
+            return true;
+        return false;
+    }
+
+    public static bool AddToInventory(QueuedItem item)
+    {
+        if (Relics.ContainsKey(item.itemId))
+        {
+            GameDataManager.gameData.UpdateItemDataEntry(item.itemId);
+            return true;
+        }
+        else if (item.itemId.Contains("Signature"))
+        {
+            if (Skills.TryGetValue(item.itemId.Replace("Signature", ""), out var skill))
+            {
+                skill.signatureUnlocked = true;
+                GameDataManager.gameData.PushSkillData();
+                return true;
+            }
+        }
+        else if (Skills.TryGetValue(item.itemId, out var skill))
+        {
+            skill.isUnlocked = true;
+            GameDataManager.gameData.PushSkillData();
+            return true;
+        }
+        else if (Outfits.TryGetValue(item.itemId, out var outfits))
+        {
+            outfits.unlocked = true;
+            GameDataManager.gameData.PushOutfitData();
+            return true;
+        }
+        else if (item.itemId.Contains("Boss tier"))
+        {
+            allowedTier++;
+            return true;
+        }
+        return false;
     }
 
     public static void OnConnect(GameSettings settings)

@@ -14,6 +14,6 @@ public class NotificationManager
     }
     public void DisplayText(string input)
     {
-        MultiWorldPlugin.ChatBoxController.WriteToChatLog(input);
+        MultiWorldPlugin.ChatBoxController.WriteToChat(input);
     }
 }

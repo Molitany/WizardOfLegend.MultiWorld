@@ -25,6 +25,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
     public static GameSettings MultiworldSettings { get; private set; }
     public static NotificationManager NotificationManager { get; private set; }
     public static ChatBoxController ChatBoxController { get; private set; }
+    public static List<string> ChatLines = [];
     public static bool InGame => GameController.activePlayers.Any();
     public static int allowedTier = 0;
     public static Player Player;
@@ -33,7 +34,6 @@ public class MultiWorldPlugin : BaseUnityPlugin
     private static Dictionary<string, GameData.StoredItemData> Relics { get; set; }
     private static Dictionary<string, Outfit> Outfits { get; set; }
     private static Dictionary<string, Player.SkillState> Skills { get; set; }
-   
     #region Hooks
     private void Player_DeadState_OnEnter(On.Player.DeadState.orig_OnEnter orig, Player.DeadState self)
     {
@@ -57,18 +57,23 @@ public class MultiWorldPlugin : BaseUnityPlugin
             return;
         orig(self);
     }
+    private void GameUI_TogglePause(On.GameUI.orig_TogglePause orig)
+    {
+        if (ChatBoxController.Writing)
+            return;
+        orig();
+    }
 
     private void NextLevelLoader_LoadNextLevel(On.NextLevelLoader.orig_LoadNextLevel orig, NextLevelLoader self)
     {
-        if (Application.loadedLevelName.Contains("BossLevel") && GameController.tierCount + 1 > allowedTier)
+        if (SceneManager.GetActiveScene().name.Contains("BossLevel") && GameController.tierCount + 1 > allowedTier)
         {
             self.nextLevelName = "Hub";
             self.showLevelSummary = true;
         }
         orig(self);
-
-        // possibly use stageCount to cancel the next floor if we dont have that unlock yet, send to "Hub"?
     }
+
     #endregion
 
     public void Awake()
@@ -83,6 +88,16 @@ public class MultiWorldPlugin : BaseUnityPlugin
         On.TitleScreen.HandleMenuStates += TitleScreen_HandleMenuStates;
         On.Player.DeadState.OnEnter += Player_DeadState_OnEnter;
         On.Player.RunState.Update += Player_RunState_Update;
+        On.LoadingScreen.StopLoading += LoadingScreen_StopLoading;
+        //On.GameController.OnLevelWasLoaded += GameController_OnLevelWasLoaded;
+        On.GameUI.TogglePause += GameUI_TogglePause;
+    }
+
+    private void LoadingScreen_StopLoading(On.LoadingScreen.orig_StopLoading orig, LoadingScreen self)
+    {
+        orig(self);
+        if (!GameObject.Find("ChatInput"))
+            CreateChatBoxtUI();
     }
 
 
@@ -112,8 +127,8 @@ public class MultiWorldPlugin : BaseUnityPlugin
             Outfits = Outfit.outfitDict;
             Skills = Player.skillsDict;
             Log.LogMessage($"firing the UI");
-            CreateConnectUI();
-            CreateChatBoxtUI();
+            if (!ArchipelagoManager.Connected)
+                CreateConnectUI();
         }
         ArchipelagoManager.UpdateAllReceivers();
     }
@@ -132,9 +147,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
     private void ConnectButton()
     {
         var url = $"{ArchipelagoManager.Url}:{ArchipelagoManager.Port}";
-
         Log.LogInfo($"Server {ArchipelagoManager.Url} Port: {ArchipelagoManager.Port} Slot: {ArchipelagoManager.SlotName} Password: {ArchipelagoManager.Password}");
-
         Log.LogMessage(ArchipelagoManager.Connect(url, ArchipelagoManager.SlotName, ArchipelagoManager.Password));
     }
 

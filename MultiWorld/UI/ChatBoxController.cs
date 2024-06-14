@@ -9,20 +9,29 @@ using UnityEngine.UI;
 namespace MultiWorld.UI;
 public class ChatBoxController : MonoBehaviour
 {
+    public static ChatBoxController Instance;
     public static GameObject ChatBox;
     public static bool Writing;
-    private GameObject ChatLog;
-    private Text ChatLogContent;
-    private GameObject ChatInput;
     public string AssetName = "ChatBox";
     public string BundleName = "connectbundle";
     public bool IsActive = false;
 
+    private GameObject ChatLog;
+    private GameObject Content;
+    private GameObject ChatInput;
     private readonly Font font = TextManager.fontDict[ChaosLang.English].font;
     private string command;
     private Coroutine coroutine;
     private readonly bool caseInsensitive = true;
     private Dictionary<string, Action<string[]>> availableCommands;
+
+    public void Awake()
+    {
+        if (Instance != null && Instance != this)
+            Destroy(this);
+        else
+            Instance = this;
+    }
 
     public void Start()
     {
@@ -30,7 +39,7 @@ public class ChatBoxController : MonoBehaviour
         AddCommands();
         ChatBox = Instantiate(connectPanelAsset);
         ChatLog = GameObject.Find("Canvas/ChatText");
-        ChatLogContent = GameObject.Find("Canvas/ChatText/Viewport/Content").GetComponent<Text>();
+        Content = GameObject.Find("Canvas/ChatText/Viewport/Content");
         CreateInteractivity();
         var texts = GameObject.Find("Canvas").GetComponentsInChildren<Text>();
         foreach (var text in texts)
@@ -38,6 +47,8 @@ public class ChatBoxController : MonoBehaviour
             text.font = font;
         }
         ChatInput.SetActive(false);
+        WriteToChat(MultiWorldPlugin.ChatLines);
+        coroutine = StartCoroutine(FadeOut());
     }
 
     public void Update()
@@ -60,6 +71,13 @@ public class ChatBoxController : MonoBehaviour
             }
             IsActive = !IsActive;
         }
+
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            SendCommand("");
+            IsActive = false;
+            Writing = false;
+        }
     }
 
     private void AddCommands()
@@ -80,7 +98,7 @@ public class ChatBoxController : MonoBehaviour
         bool result = amount == parameters.Length;
         if (!result)
         {
-            WriteToChatLog(helpText ?? $"This command takes {amount} parameters.  You passed {parameters.Length}");
+            WriteToChat(helpText ?? $"This command takes {amount} parameters.  You passed {parameters.Length}");
         }
         return result;
     }
@@ -89,12 +107,12 @@ public class ChatBoxController : MonoBehaviour
     {
         if (!ValidateParameterList(parameters, 0)) return;
 
-        WriteToChatLog("Available MULTIWORLD commands:");
-        WriteToChatLog("status: Display connection status");
-        WriteToChatLog("connect URL:PORT NAME [PASSWORD]: Connect to URL:PORT with player name as NAME with optional PASSWORD");
-        WriteToChatLog("disconnect: Disconnect from current server");
-        WriteToChatLog("deathlink: Toggles deathlink on/off");
-        WriteToChatLog("say COMMAND: Sends a text message or command to the server");
+        WriteToChat("Available MULTIWORLD commands:");
+        WriteToChat("status: Display connection status");
+        WriteToChat("connect URL:PORT NAME [PASSWORD]: Connect to URL:PORT with player name as NAME with optional PASSWORD");
+        WriteToChat("disconnect: Disconnect from current server");
+        WriteToChat("deathlink: Toggles deathlink on/off");
+        WriteToChat("say COMMAND: Sends a text message or command to the server");
     }
 
     private void Status(string[] parameters)
@@ -102,23 +120,23 @@ public class ChatBoxController : MonoBehaviour
         if (!ValidateParameterList(parameters, 0)) return;
         var server = MultiWorldPlugin.ArchipelagoManager.ServerAddress;
         if (server == string.Empty)
-            WriteToChatLog("Not connected to server");
+            WriteToChat("Not connected to server");
         else
-            WriteToChatLog($"Connected to {server}");
+            WriteToChat($"Connected to {server}");
     }
 
     private void Connect(string[] parameters)
     {
         if (MultiWorldPlugin.ArchipelagoManager.Connected)
         {
-            WriteToChatLog("Already connected to server!");
+            WriteToChat("Already connected to server!");
             return;
         }
 
 
         if (parameters.Length < 2)
         {
-            WriteToChatLog($"Connect requires 2 or 3 parameters. You passed {parameters.Length}");
+            WriteToChat($"Connect requires 2 or 3 parameters. You passed {parameters.Length}");
             return;
         }
 
@@ -140,7 +158,7 @@ public class ChatBoxController : MonoBehaviour
 
             if (passwordIndex == -1)
             {
-                WriteToChatLog("Invalid syntax!");
+                WriteToChat("Invalid syntax!");
                 return;
             }
 
@@ -158,7 +176,7 @@ public class ChatBoxController : MonoBehaviour
 
         if (parameters.Length > passwordIndex + 1)
         {
-            WriteToChatLog($"Connect requires 2 or 3 parameters. You passed {parameters.Length}");
+            WriteToChat($"Connect requires 2 or 3 parameters. You passed {parameters.Length}");
             return;
         }
 
@@ -167,8 +185,8 @@ public class ChatBoxController : MonoBehaviour
             password = parameters[passwordIndex];
         }
 
-        WriteToChatLog($"Attempting to connect to {url} as {name}");
-        WriteToChatLog(MultiWorldPlugin.ArchipelagoManager.Connect(url, name, password));
+        WriteToChat($"Attempting to connect to {url} as {name}");
+        WriteToChat(MultiWorldPlugin.ArchipelagoManager.Connect(url, name, password));
     }
 
     private void Disconnect(string[] parameters)
@@ -179,10 +197,10 @@ public class ChatBoxController : MonoBehaviour
         {
             var server = MultiWorldPlugin.ArchipelagoManager.ServerAddress;
             MultiWorldPlugin.ArchipelagoManager.Disconnect();
-            WriteToChatLog($"Disconnected from {server}");
+            WriteToChat($"Disconnected from {server}");
         }
         else
-            WriteToChatLog($"Not connected to any server!");
+            WriteToChat($"Not connected to any server!");
 
     }
 
@@ -193,27 +211,27 @@ public class ChatBoxController : MonoBehaviour
         if (MultiWorldPlugin.ArchipelagoManager.Connected)
         {
             bool enabled = MultiWorldPlugin.DeathLinkManager.ToggleDeathLink();
-            WriteToChatLog($"Death link has been {(enabled ? "enabled" : "disabled")}");
+            WriteToChat($"Death link has been {(enabled ? "enabled" : "disabled")}");
         }
         else
-            WriteToChatLog("Not connected to any server");
+            WriteToChat("Not connected to any server");
     }
 
     private void Say(string[] parameters)
     {
         if (parameters.Length < 1)
         {
-            WriteToChatLog($"This command is requires at least 1 parameter. You passed {parameters.Length}");
+            WriteToChat($"This command is requires at least 1 parameter. You passed {parameters.Length}");
             return;
         }
 
         if (!MultiWorldPlugin.ArchipelagoManager.Connected)
         {
-            WriteToChatLog("Not connected to server!");
+            WriteToChat("Not connected to server!");
             return;
         }
 
-        WriteToChatLog(string.Join(" ", parameters));
+        WriteToChat(string.Join(" ", parameters));
         MultiWorldPlugin.ArchipelagoManager.SendMessage(string.Join(" ", parameters));
     }
 
@@ -225,7 +243,7 @@ public class ChatBoxController : MonoBehaviour
 
     private void SendCommand(string input)
     {
-        if (input == null) return;
+        input ??= "";
         ChatInput.SetActive(false);
         var parameters = input.Split(' ');
         var command = caseInsensitive ? parameters[0].ToLower() : parameters[0];
@@ -234,9 +252,21 @@ public class ChatBoxController : MonoBehaviour
         coroutine = StartCoroutine(FadeOut());
     }
 
-    public void WriteToChatLog(string input)
+    public void WriteToChat(string input)
     {
-        ChatLogContent.text += $"{input}\n";
+        GameObject line = new($"line {MultiWorldPlugin.ChatLines.Count}", typeof(CanvasRenderer), typeof(RectTransform));
+        line.transform.SetParent(Content.transform, false);
+        var textComponent = line.AddComponent<Text>();
+        textComponent.font = font;
+        textComponent.text = input;
+        if (!MultiWorldPlugin.ChatLines.Contains(input))
+            MultiWorldPlugin.ChatLines.Add(input);
+    }
+
+    public void WriteToChat(List<string> lines)
+    {
+        foreach (var line in lines)
+            WriteToChat(line);
     }
 
     private IEnumerator FadeOut()
@@ -245,7 +275,7 @@ public class ChatBoxController : MonoBehaviour
         var canvasGroup = ChatLog.GetComponent<CanvasGroup>();
         while (!Mathf.Approximately(canvasGroup.alpha, 0))
         {
-            canvasGroup.alpha -= 0.1f;
+            canvasGroup.alpha -= 0.05f;
             yield return new WaitForEndOfFrame();
         }
         canvasGroup.alpha = 0;

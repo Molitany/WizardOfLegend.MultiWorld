@@ -38,7 +38,7 @@ public class LocationReceiver : IReceiver<ReadOnlyCollection<long>>
 
         foreach (string locationId in locationQueue)
         {
-            MultiWorldPlugin.NotificationManager.DisplayText($"Location update loop: {locationId}");
+            // Remove possibility of getting the check from that locationId.
         }
 
         ClearQueue();

@@ -17,6 +17,7 @@ public class ItemReceiver : IReceiver<ReceivedItemsHelper>
         {
             var item = itemHelper.DequeueItem();
             var player = item.Player.Name;
+            MultiWorldPlugin.Log.LogInfo($"Player: {player}");
             if (player != null || player == string.Empty)
                 player = "Server";
             var itemIndex = itemHelper.Index;
@@ -42,7 +43,7 @@ public class ItemReceiver : IReceiver<ReceivedItemsHelper>
             if (item.index > itemsReceived)
             {
                 MultiWorldPlugin.AddToInventory(item);
-                MultiWorldPlugin.NotificationManager.DisplayNotification(item);
+                MultiWorldPlugin.ArchipelagoManager.DisplayNoticeFromArchipelagoId(item.itemId);
                 itemsReceived++;
             }
         }

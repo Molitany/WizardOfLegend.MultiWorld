@@ -11,6 +11,8 @@ using UnityEngine.SceneManagement;
 using System;
 using MultiWorld.DeathLink;
 using MultiWorld.Notification;
+using System.Threading;
+using System.IO;
 
 namespace MultiWorld;
 
@@ -27,14 +29,84 @@ public class MultiWorldPlugin : BaseUnityPlugin
     public static ChatBoxController ChatBoxController { get; private set; }
     public static List<string> ChatLines = [];
     public static bool InGame => GameController.activePlayers.Any();
-    public static int allowedTier = 0;
     public static Player Player;
+    public static int allowedTier = 0;
     public static bool IsConnected;
 
     private static Dictionary<string, GameData.StoredItemData> Relics { get; set; }
     private static Dictionary<string, Outfit> Outfits { get; set; }
     private static Dictionary<string, Player.SkillState> Skills { get; set; }
+
     #region Hooks
+    private void Hook()
+    {
+        On.NextLevelLoader.LoadNextLevel += NextLevelLoader_LoadNextLevel;
+        On.TitleScreen.HandleMenuStates += TitleScreen_HandleMenuStates;
+        On.Player.DeadState.OnEnter += Player_DeadState_OnEnter;
+        On.Player.RunState.Update += Player_RunState_Update;
+        On.LoadingScreen.StopLoading += LoadingScreen_StopLoading;
+        On.GameUI.TogglePause += GameUI_TogglePause;
+        On.UnlockNotifier.Notify += UnlockNotifier_Notify;
+        On.SkillStoreItem.Buy += SkillStoreItem_Buy;
+        On.Player.HandleSkillUnlock_string_bool += Player_HandleSkillUnlock;
+        On.ItemStoreItem.BuyWithPlat += ItemStoreItem_BuyWithPlat;
+        On.Item.IsUnlocked += Item_IsUnlocked;
+        On.OutfitStoreItem.Buy += OutfitStoreItem_Buy;
+        On.Outfit.UnlockOutfit += Outfit_UnlockOutfit;
+    }
+
+    private void UnlockNotifier_Notify(On.UnlockNotifier.orig_Notify orig, UnlockNotifier self, string givenID, UnlockNotifier.NoticeType givenType)
+    {
+        // Disable normal unlock notifications
+    }
+
+    private bool ItemStoreItem_BuyWithPlat(On.ItemStoreItem.orig_BuyWithPlat orig, ItemStoreItem self)
+    {
+        var result = orig(self);
+        if (result && self.usePlatinumCost && !self.cursedOnly)
+            ArchipelagoManager.SendLocation(self.itemID);
+        return result;
+    }
+
+    private bool Item_IsUnlocked(On.Item.orig_IsUnlocked orig, string givenID, bool setUnlocked)
+    {
+        // Disable natural relic unlocking
+        if (!InGame)
+            return orig(givenID, false);
+        return orig(givenID, setUnlocked);
+    }
+    private bool OutfitStoreItem_Buy(On.OutfitStoreItem.orig_Buy orig, OutfitStoreItem self, Player player)
+    {
+        var result = orig(self, player);
+        if (result && self.usePlatinumCost)
+            ArchipelagoManager.SendLocation(self.outfitID);
+        return result;
+    }
+
+    private void Outfit_UnlockOutfit(On.Outfit.orig_UnlockOutfit orig, string givenName, bool pushData)
+    {
+        // Disable unlocking outfits by default
+    }
+
+    private bool SkillStoreItem_Buy(On.SkillStoreItem.orig_Buy orig, SkillStoreItem self, Player player)
+    {
+        var result = orig(self, player);
+        if (result && self.usePlatinumCost)
+            ArchipelagoManager.SendLocation(self.skillID);
+        return result;
+    }
+
+    private void Player_HandleSkillUnlock(On.Player.orig_HandleSkillUnlock_string_bool orig, Player self, string givenID, bool isSignature)
+    {
+        // Disable the unlocking of skill naturally
+    }
+
+    private void LoadingScreen_StopLoading(On.LoadingScreen.orig_StopLoading orig, LoadingScreen self)
+    {
+        orig(self);
+        if (!GameObject.Find("ChatInput"))
+            CreateChatBoxtUI();
+    }
     private void Player_DeadState_OnEnter(On.Player.DeadState.orig_OnEnter orig, Player.DeadState self)
     {
         orig(self);
@@ -84,21 +156,10 @@ public class MultiWorldPlugin : BaseUnityPlugin
         NotificationManager = new();
         AssetBundleHelper.LoadBundle();
         CreateArchipelagoInfo();
-        On.NextLevelLoader.LoadNextLevel += NextLevelLoader_LoadNextLevel;
-        On.TitleScreen.HandleMenuStates += TitleScreen_HandleMenuStates;
-        On.Player.DeadState.OnEnter += Player_DeadState_OnEnter;
-        On.Player.RunState.Update += Player_RunState_Update;
-        On.LoadingScreen.StopLoading += LoadingScreen_StopLoading;
-        //On.GameController.OnLevelWasLoaded += GameController_OnLevelWasLoaded;
-        On.GameUI.TogglePause += GameUI_TogglePause;
+        Hook();
+
     }
 
-    private void LoadingScreen_StopLoading(On.LoadingScreen.orig_StopLoading orig, LoadingScreen self)
-    {
-        orig(self);
-        if (!GameObject.Find("ChatInput"))
-            CreateChatBoxtUI();
-    }
 
 
     // Create a chat to receive and send AP commands
@@ -129,6 +190,9 @@ public class MultiWorldPlugin : BaseUnityPlugin
             Log.LogMessage($"firing the UI");
             if (!ArchipelagoManager.Connected)
                 CreateConnectUI();
+            if (!GameObject.Find("ChatInput"))
+                CreateChatBoxtUI();
+
         }
         ArchipelagoManager.UpdateAllReceivers();
     }
@@ -161,6 +225,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
         var ChatBox = new GameObject("ChatBoxController");
         ChatBoxController = ChatBox.AddComponent<ChatBoxController>();
     }
+
     #endregion
 
     public static bool CheckItemExists(string item)
@@ -211,7 +276,8 @@ public class MultiWorldPlugin : BaseUnityPlugin
         }
         else if (item.itemId.Contains("Boss tier"))
         {
-            allowedTier++;
+            if (int.TryParse(item.itemId.Replace("Boss tier ", ""), out int tier))
+                allowedTier = Mathf.Max(tier, allowedTier);
             return true;
         }
         return false;
@@ -221,4 +287,5 @@ public class MultiWorldPlugin : BaseUnityPlugin
     {
         MultiworldSettings = settings;
     }
+
 }

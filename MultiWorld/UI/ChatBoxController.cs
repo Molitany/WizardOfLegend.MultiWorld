@@ -31,10 +31,6 @@ public class ChatBoxController : MonoBehaviour
             Destroy(this);
         else
             Instance = this;
-    }
-
-    public void Start()
-    {
         var connectPanelAsset = AssetBundleHelper.LoadPrefab(AssetName);
         AddCommands();
         ChatBox = Instantiate(connectPanelAsset);
@@ -50,6 +46,7 @@ public class ChatBoxController : MonoBehaviour
         WriteToChat(MultiWorldPlugin.ChatLines);
         coroutine = StartCoroutine(FadeOut());
     }
+
 
     public void Update()
     {
@@ -90,7 +87,14 @@ public class ChatBoxController : MonoBehaviour
             { "disconnect", Disconnect },
             { "deathlink", DeathLink },
             { "say", Say },
+            { "tier", Tier },
         };
+    }
+
+    private void Tier(string[] parameters)
+    {
+        if (!ValidateParameterList(parameters, 0)) return;
+        WriteToChat($"Current highest allowed boss is boss tier {MultiWorldPlugin.allowedTier}");
     }
 
     private bool ValidateParameterList(string[] parameters, int amount, string helpText = null)
@@ -113,6 +117,7 @@ public class ChatBoxController : MonoBehaviour
         WriteToChat("disconnect: Disconnect from current server");
         WriteToChat("deathlink: Toggles deathlink on/off");
         WriteToChat("say COMMAND: Sends a text message or command to the server");
+        WriteToChat("tier: Display the current boss tier");
     }
 
     private void Status(string[] parameters)
@@ -254,11 +259,16 @@ public class ChatBoxController : MonoBehaviour
 
     public void WriteToChat(string input)
     {
+        MultiWorldPlugin.Log.LogMessage(input);
         GameObject line = new($"line {MultiWorldPlugin.ChatLines.Count}", typeof(CanvasRenderer), typeof(RectTransform));
+        MultiWorldPlugin.Log.LogMessage(line.name);
+        MultiWorldPlugin.Log.LogMessage(Content);
         line.transform.SetParent(Content.transform, false);
         var textComponent = line.AddComponent<Text>();
+        MultiWorldPlugin.Log.LogMessage(textComponent.name);
         textComponent.font = font;
         textComponent.text = input;
+        MultiWorldPlugin.Log.LogMessage(MultiWorldPlugin.ChatLines);
         if (!MultiWorldPlugin.ChatLines.Contains(input))
             MultiWorldPlugin.ChatLines.Add(input);
     }

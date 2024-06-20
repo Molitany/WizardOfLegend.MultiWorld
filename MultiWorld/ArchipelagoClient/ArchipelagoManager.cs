@@ -7,8 +7,11 @@ using MultiWorld.ArchipelagoClient.Receivers;
 using MultiWorld.Notification;
 using MultiWorld.UI;
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Text;
 
 namespace MultiWorld.ArchipelagoClient;
 
@@ -25,6 +28,16 @@ public class ArchipelagoManager
     public ItemReceiver ItemReceiver => _itemReceiver;
     public MessageReceiver MessageReceiver => _messageReceiver;
     public ReadOnlyCollection<ItemInfo> StartingArchipelagoItems { get; private set; }
+    public Dictionary<string, string[]> ItemNameGroups { get; private set; }
+    public Dictionary<NotificationManager.NoticeType, List<string>> FoundLocations { get; private set; } = new()
+    {
+        [NotificationManager.NoticeType.Relic] = [],
+        [NotificationManager.NoticeType.Spell] = [],
+        [NotificationManager.NoticeType.Signature] = [],
+        [NotificationManager.NoticeType.Outfit] = [],
+        [NotificationManager.NoticeType.Progression] = [],
+    };
+
 
     private ArchipelagoSession _session;
     private const string _game = "Wizard of Legend";
@@ -89,19 +102,15 @@ public class ArchipelagoManager
     {
         GameSettings settings = new()
         {
-            //Config = ((JObject)loginSuccessful.SlotData["config"]).ToObject<Config>(),
-            //RequiredEnding = int.Parse(loginSuccessful.SlotData["ending"].ToString()),
             DeathLinkEnabled = loginSuccessful.SlotData["deathLink"].ToString() == "1",
-            PlayerName = playerName
+            PlayerName = playerName,
         };
         //Deathlink
         _deathLink = _session.CreateDeathLinkService();
         _deathLink.OnDeathLinkReceived += ReceivedDeath;
         EnableDeathLink(settings.DeathLinkEnabled);
 
-        //Starting Locations
-        StartingArchipelagoItems = _session.Items.AllItemsReceived;
-
+        ItemNameGroups = _session.DataStorage.GetItemNameGroups();
 
         _session.DataStorage.TrackHints(_hintReceiver.OnReceive, true);
         MultiWorldPlugin.OnConnect(settings);
@@ -135,7 +144,7 @@ public class ArchipelagoManager
                 _locationReceiver.Update();
             }
 
-            _messageReceiver.Update(); // Doesn't need to be in game
+            _messageReceiver.Update();
         }
     }
 
@@ -215,32 +224,31 @@ public class ArchipelagoManager
             MultiWorldPlugin.Log.LogError($"Location {locationId} does not exist on Archipelago!");
     }
 
+    public NotificationManager.NoticeType GetGroupFromArchipelagoId(string archipelagoId)
+    {
+        var item_group = ItemNameGroups.FirstOrDefault(group => group.Value.Contains(archipelagoId)).Key;
+        var type = item_group switch
+        {
+            "relics" => NotificationManager.NoticeType.Relic,
+            "skills_basic" => NotificationManager.NoticeType.Spell,
+            "skills_dash" => NotificationManager.NoticeType.Spell,
+            "skills_optionals" => NotificationManager.NoticeType.Spell,
+            "skills_signatures" => NotificationManager.NoticeType.Signature,
+            "outfits" => NotificationManager.NoticeType.Outfit,
+            "progression" => NotificationManager.NoticeType.Progression,
+            _ => NotificationManager.NoticeType.Unknown,
+        };
+        if (type == NotificationManager.NoticeType.Unknown)
+            MultiWorldPlugin.Log.LogError($"{archipelagoId} not found in groups!");
+        return type;
+    }
+
     public void DisplayNoticeFromArchipelagoId(string archipelagoId)
     {
-        if (!StartingArchipelagoItems.Any(x => x.ItemName == archipelagoId))
-        {
-            _session.DataStorage.GetItemNameGroupsAsync(dictionary =>
-            {
-                var item_group = dictionary.First(group => group.Value.Contains(archipelagoId)).Key;
-                var itemName = archipelagoId;
-                if (itemName.EndsWith("Signature"))
-                    itemName = itemName.Replace("Signature", "");
+        string itemName = MultiWorldPlugin.CleanArchipelagoId(archipelagoId);
 
-                var noticeType = item_group switch
-                {
-                    "relics" => NotificationManager.NoticeType.Relic,
-                    "skills_basic" => NotificationManager.NoticeType.Spell,
-                    "skills_dash" => NotificationManager.NoticeType.Spell,
-                    "skills_optionals" => NotificationManager.NoticeType.Spell,
-                    "skills_signatures" => NotificationManager.NoticeType.Signature,
-                    "outfits" => NotificationManager.NoticeType.Outfit,
-                    "progression" => NotificationManager.NoticeType.Progression,
-                    _ => throw new NotImplementedException(),
-                };
-
-                MultiWorldPlugin.Log.LogMessage($"{noticeType}: {archipelagoId}");
-                MultiWorldPlugin.NotificationManager.DisplayUnlockNotification(itemName, noticeType);
-            });
-        }
+        var noticeType = GetGroupFromArchipelagoId(archipelagoId);
+        MultiWorldPlugin.Log.LogMessage($"{noticeType}: {archipelagoId}");
+        MultiWorldPlugin.NotificationManager.DisplayUnlockNotification(itemName, noticeType);
     }
 }

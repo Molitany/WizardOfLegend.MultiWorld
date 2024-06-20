@@ -15,6 +15,7 @@ public class NotificationManager
         Signature,
         Outfit,
         Progression,
+        Unknown,
     }
 
     public void DisplayNotification(QueuedItem queuedItem)

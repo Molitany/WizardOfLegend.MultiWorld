@@ -35,10 +35,11 @@ public class LocationReceiver : IReceiver<ReadOnlyCollection<long>>
             return;
 
         MultiWorldPlugin.Log.LogWarning("Processing location queue");
-
+        var APManager = MultiWorldPlugin.ArchipelagoManager;
         foreach (string locationId in locationQueue)
         {
-            // Remove possibility of getting the check from that locationId.
+            var itemName = MultiWorldPlugin.CleanArchipelagoId(locationId);
+            APManager.FoundLocations[APManager.GetGroupFromArchipelagoId(locationId)].Add(itemName);
         }
 
         ClearQueue();

@@ -259,16 +259,11 @@ public class ChatBoxController : MonoBehaviour
 
     public void WriteToChat(string input)
     {
-        MultiWorldPlugin.Log.LogMessage(input);
         GameObject line = new($"line {MultiWorldPlugin.ChatLines.Count}", typeof(CanvasRenderer), typeof(RectTransform));
-        MultiWorldPlugin.Log.LogMessage(line.name);
-        MultiWorldPlugin.Log.LogMessage(Content);
         line.transform.SetParent(Content.transform, false);
         var textComponent = line.AddComponent<Text>();
-        MultiWorldPlugin.Log.LogMessage(textComponent.name);
         textComponent.font = font;
         textComponent.text = input;
-        MultiWorldPlugin.Log.LogMessage(MultiWorldPlugin.ChatLines);
         if (!MultiWorldPlugin.ChatLines.Contains(input))
             MultiWorldPlugin.ChatLines.Add(input);
     }

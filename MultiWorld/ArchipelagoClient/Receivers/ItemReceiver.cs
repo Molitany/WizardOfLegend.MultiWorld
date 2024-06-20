@@ -10,6 +10,7 @@ public class ItemReceiver : IReceiver<ReceivedItemsHelper>
 
     private readonly Queue<QueuedItem> itemQueue = new();
     private int itemsReceived;
+    private bool firstTime = true;
 
     public void OnReceive(ReceivedItemsHelper itemHelper)
     {
@@ -38,17 +39,21 @@ public class ItemReceiver : IReceiver<ReceivedItemsHelper>
         if (!itemQueue.Any())
             return;
 
+
         foreach (var item in itemQueue)
         {
             if (item.index > itemsReceived)
             {
                 MultiWorldPlugin.AddToInventory(item);
-                MultiWorldPlugin.ArchipelagoManager.DisplayNoticeFromArchipelagoId(item.itemId);
+                if (!firstTime)
+                    MultiWorldPlugin.ArchipelagoManager.DisplayNoticeFromArchipelagoId(item.itemId);
                 itemsReceived++;
             }
         }
-
         ClearQueue();
+
+        if (firstTime)
+            firstTime = false;
     }
     public void LoadItemsReceived(int items) => itemsReceived = items;
     public void ResetItemsReceived() => itemsReceived = 0;

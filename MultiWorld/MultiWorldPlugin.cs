@@ -5,18 +5,15 @@ using System.Linq;
 using UnityEngine;
 using MultiWorld.UI;
 using MultiWorld.ArchipelagoClient;
-using UnityEngine.UI;
-using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
-using System;
 using MultiWorld.DeathLink;
 using MultiWorld.Notification;
-using System.Threading;
-using System.IO;
+using System.Text;
+using System.Collections.ObjectModel;
+using System;
 
 namespace MultiWorld;
 
-[BepInDependency("xyz.yekoc.wizardoflegend.LegendAPI", BepInDependency.DependencyFlags.HardDependency)]
 [BepInPlugin("Molitany.Archipelago", "Archipelago", "1.0.0")]
 public class MultiWorldPlugin : BaseUnityPlugin
 {
@@ -36,6 +33,11 @@ public class MultiWorldPlugin : BaseUnityPlugin
     private static Dictionary<string, GameData.StoredItemData> Relics { get; set; }
     private static Dictionary<string, Outfit> Outfits { get; set; }
     private static Dictionary<string, Player.SkillState> Skills { get; set; }
+    private bool FirstTime = true;
+    private readonly List<string> possibleItems = [];
+    private readonly List<string> possibleSkills = [];
+    private readonly List<string> possibleSignatures = [];
+    private readonly List<string> possibleOutfits = [];
 
     #region Hooks
     private void Hook()
@@ -53,6 +55,113 @@ public class MultiWorldPlugin : BaseUnityPlugin
         On.Item.IsUnlocked += Item_IsUnlocked;
         On.OutfitStoreItem.Buy += OutfitStoreItem_Buy;
         On.Outfit.UnlockOutfit += Outfit_UnlockOutfit;
+        On.GameController.Awake += GameController_Awake;
+        On.OutfitMerchantNpc.CreateOutfitStoreItem += OutfitMerchantNpc_CreateOutfitStoreItem;
+    }
+
+    private void OutfitMerchantNpc_CreateOutfitStoreItem(On.OutfitMerchantNpc.orig_CreateOutfitStoreItem orig, OutfitMerchantNpc self, Vector2 givenPosition, string givenID)
+    {
+        if (possibleOutfits.Count > 0)
+        {
+            var text = possibleOutfits[UnityEngine.Random.Range(0, possibleOutfits.Count)];
+            possibleOutfits.Remove(text);
+            orig(self, givenPosition, text);
+        }
+    }
+
+    private void GameController_Awake(On.GameController.orig_Awake orig, GameController self)
+    {
+        if (FirstTime)
+        {
+            On.LootManager.GetSkillID += LootManager_GetSkillID;
+            On.LootManager.GetLockedItemID += LootManager_GetLockedItemID;
+            FirstTime = false;
+        }
+
+        if (Player)
+        {
+            possibleSkills.AddRange(LootManager.completeSkillList.Except(ArchipelagoManager.FoundLocations[NotificationManager.NoticeType.Spell])
+                                                                 .Except(Globals.startingSkillIDList)
+                                                                 .Except(Globals.startingOverdriveIDList));
+
+            possibleSignatures.AddRange(LootManager.completeSkillList.Except(ArchipelagoManager.FoundLocations[NotificationManager.NoticeType.Signature])
+                                                                     .Except(Globals.startingSkillIDList)
+                                                                     .Except(Globals.startingOverdriveIDList)
+                                                                     .Where(skill => Player.skillsDict[skill].hasSignatureVariant));
+
+            List<string> startingItems = [PlayerStartItem.staticID, BuffWithFriendship.staticID, WaterChargeFamiliarItem.staticID];
+            possibleItems.AddRange(LootManager.completeItemDict.Keys.Except(ArchipelagoManager.FoundLocations[NotificationManager.NoticeType.Relic])
+                                                                    .Except(startingItems));
+
+            List<string> startingOutfits = ["Hope", "Patience"];
+            possibleOutfits.AddRange(Outfit.outfitList.Select(outfit => outfit.outfitID)
+                                                      .Except(ArchipelagoManager.FoundLocations[NotificationManager.NoticeType.Outfit])
+                                                      .Except(startingOutfits));
+        }
+        orig(self);
+    }
+
+    private string LootManager_GetLockedItemID(On.LootManager.orig_GetLockedItemID orig)
+    {
+        string text = string.Empty;
+        if (possibleItems.Count > 0)
+        {
+            text = possibleItems[UnityEngine.Random.Range(0, possibleItems.Count)];
+            possibleItems.Remove(text);
+        }
+        return text;
+    }
+
+    private string LootManager_GetSkillID(On.LootManager.orig_GetSkillID orig, bool locked, bool signature)
+    {
+        string text = string.Empty;
+        if (signature)
+        {
+            Log.LogMessage(possibleSignatures.Count);
+            if (possibleSignatures.Count > 0)
+                text = possibleSignatures[UnityEngine.Random.Range(0, possibleSignatures.Count)];
+        }
+        else if (locked)
+        {
+            if (possibleSkills.Count > 0)
+                text = possibleSkills[UnityEngine.Random.Range(0, possibleSkills.Count)];
+        }
+        else if (LootManager.availableSkillList.Count > 0)
+        {
+            text = LootManager.availableSkillList[UnityEngine.Random.Range(0, LootManager.availableSkillList.Count)];
+        }
+        if (text != string.Empty)
+        {
+            LootManager.lockedSigList.Remove(text);
+            LootManager.lockedSkillList.Remove(text);
+            LootManager.availableSkillList.Remove(text);
+            possibleSkills.Remove(text);
+            possibleSignatures.Remove(text);
+        }
+        return text;
+    }
+
+    public static string CleanArchipelagoId(string archipelagoId)
+    {
+        var itemName = archipelagoId;
+        if (itemName.EndsWith("Signature"))
+            itemName = itemName.Replace("Signature", "");
+        return itemName;
+    }
+
+    public string GetDisplayNameFromArchipelagoId(string archipelagoId)
+    {
+        string itemName = CleanArchipelagoId(archipelagoId);
+
+        return ArchipelagoManager.GetGroupFromArchipelagoId(archipelagoId) switch
+        {
+            NotificationManager.NoticeType.Relic => TextManager.GetItemName(itemName),
+            NotificationManager.NoticeType.Spell => TextManager.GetSkillName(itemName),
+            NotificationManager.NoticeType.Signature => TextManager.GetSkillName(itemName),
+            NotificationManager.NoticeType.Outfit => TextManager.GetOutfitName(itemName),
+            NotificationManager.NoticeType.Progression => itemName,
+            _ => itemName,
+        };
     }
 
     private void UnlockNotifier_Notify(On.UnlockNotifier.orig_Notify orig, UnlockNotifier self, string givenID, UnlockNotifier.NoticeType givenType)
@@ -92,7 +201,12 @@ public class MultiWorldPlugin : BaseUnityPlugin
     {
         var result = orig(self, player);
         if (result && self.usePlatinumCost)
-            ArchipelagoManager.SendLocation(self.skillID);
+        {
+            if (self.signatureOnly)
+                ArchipelagoManager.SendLocation(self.skillID + "Signature");
+            else
+                ArchipelagoManager.SendLocation(self.skillID);
+        }
         return result;
     }
 
@@ -125,13 +239,13 @@ public class MultiWorldPlugin : BaseUnityPlugin
 
     private void Player_RunState_Update(On.Player.RunState.orig_Update orig, Player.RunState self)
     {
-        if (ChatBoxController.Writing)
+        if (ChatBoxController.Writing || ArchipelagoConnectButtonController.IsOpened)
             return;
         orig(self);
     }
     private void GameUI_TogglePause(On.GameUI.orig_TogglePause orig)
     {
-        if (ChatBoxController.Writing)
+        if (ChatBoxController.Writing || ArchipelagoConnectButtonController.IsOpened)
             return;
         orig();
     }
@@ -157,7 +271,6 @@ public class MultiWorldPlugin : BaseUnityPlugin
         AssetBundleHelper.LoadBundle();
         CreateArchipelagoInfo();
         Hook();
-
     }
 
 
@@ -167,21 +280,68 @@ public class MultiWorldPlugin : BaseUnityPlugin
     {
         if (Input.GetKeyDown(KeyCode.F1))
         {
-            Log.LogInfo("big thing");
-            var allGO = GameObject.Find("TitleMenu");
-            Log.LogMessage(allGO.transform.parent.name);
-            for (int i = 0; i < allGO.transform.childCount; i++)
-            {
-                Log.LogMessage(allGO.transform.GetChild(i).name);
-            }
             Log.LogMessage($"scene: {SceneManager.GetActiveScene().name}");
-            CreateConnectUI();
+            GameObject[] rootObjects = SceneManager.GetActiveScene().GetRootGameObjects();
+            foreach (var rootObject in rootObjects)
+            {
+                StringBuilder sb = new($"{rootObject.transform.name}: ");
+                Component[] components = rootObject.GetComponents(typeof(Component));
+                foreach (var obj in components)
+                {
+                    sb.Append(obj.ToString());
+                }
+                Log.LogMessage(sb);
+                LogobjectsRecursively(rootObject.transform, 1);
+            }
+            Log.LogMessage(string.Join(", ", ItemMerchant.PrefabDict.Select(pair => $"{pair.Key} => {pair.Value}").ToArray()));
         }
+        else if (Input.GetKeyDown(KeyCode.F2))
+        {
+            StringBuilder sb = new($"Locked item id list: ");
+            foreach (var item in LootManager.lockedItemIDList)
+            {
+                sb.Append($"{TextManager.GetItemName(item)}, ");
+            }
+            Log.LogMessage(sb);
+
+            sb = new($"Locked skill id list: ");
+            foreach (var item in LootManager.lockedSkillList)
+            {
+                sb.Append($"{TextManager.GetSkillName(item)}, ");
+            }
+            Log.LogMessage(sb);
+
+            sb = new($"Available skill id list: ");
+            foreach (var item in LootManager.availableSkillList)
+            {
+                sb.Append($"{TextManager.GetSkillName(item)}, ");
+            }
+            Log.LogMessage(sb);
+
+            sb = new($"Complete skill id list: ");
+            foreach (var item in LootManager.completeSkillList)
+            {
+                sb.Append($"{TextManager.GetSkillName(item)}, ");
+            }
+            Log.LogMessage(sb);
+
+            sb = new($"Locked signature id list: ");
+            foreach (var item in LootManager.lockedSigList)
+            {
+                sb.Append($"{TextManager.GetSkillName(item)}, ");
+            }
+            Log.LogMessage(sb);
+        }
+        else if (Input.GetKeyDown(KeyCode.F3))
+        {
+            Player.platWallet.balance = 99999;
+        }
+
         if (Player)
         {
             DeathLinkManager.Update();
         }
-        if (InGame && Player == null)
+        else if (InGame && Player == null)
         {
             Player = GameController.activePlayers[0];
             Relics = GameDataManager.gameData.itemDataDictionary;
@@ -192,9 +352,25 @@ public class MultiWorldPlugin : BaseUnityPlugin
                 CreateConnectUI();
             if (!GameObject.Find("ChatInput"))
                 CreateChatBoxtUI();
-
         }
         ArchipelagoManager.UpdateAllReceivers();
+    }
+
+    private static void LogobjectsRecursively(Transform root, int layer)
+    {
+        if (root.childCount == 0)
+            return;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            var child = root.GetChild(i);
+            StringBuilder sb = new($"{string.Concat(Enumerable.Repeat("--", layer).ToArray())} {child.name}: ");
+            foreach (var obj in child.GetComponents<Component>())
+            {
+                sb.Append($"{obj}, ");
+            }
+            Log.LogMessage(sb);
+            LogobjectsRecursively(child, layer + 1);
+        }
     }
 
     #region UI
@@ -255,16 +431,19 @@ public class MultiWorldPlugin : BaseUnityPlugin
         }
         else if (item.itemId.Contains("Signature"))
         {
-            if (Skills.TryGetValue(item.itemId.Replace("Signature", ""), out var skill))
+            var itemName = item.itemId.Replace("Signature", "");
+            if (Skills.ContainsKey(itemName))
             {
-                skill.signatureUnlocked = true;
+                if (Player.skillsDict.TryGetValue(itemName, out var skillState))
+                    skillState.signatureUnlocked = true;
                 GameDataManager.gameData.PushSkillData();
                 return true;
             }
         }
-        else if (Skills.TryGetValue(item.itemId, out var skill))
+        else if (Skills.ContainsKey(item.itemId))
         {
-            skill.isUnlocked = true;
+            if (Player.skillsDict.TryGetValue(item.itemId, out var skillState))
+                skillState.isUnlocked = true;
             GameDataManager.gameData.PushSkillData();
             return true;
         }

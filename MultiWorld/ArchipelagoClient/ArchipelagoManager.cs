@@ -39,9 +39,6 @@ public class ArchipelagoManager
 
     private ArchipelagoSession _session;
     private const string _game = "Wizard of Legend";
-    private string _lastServerUrl;
-    private string _lastPlayerName;
-    private string _lastPassword;
 
     private DeathLinkService _deathLink;
     private readonly HintReceiver _hintReceiver = new();
@@ -52,15 +49,14 @@ public class ArchipelagoManager
 
     #region Connection
 
-    public string Connect(string url, string playerName, string password)
+    public string Connect(string address, string port, string playerName, string password)
     {
-        if (_lastServerUrl != url || _lastPlayerName != playerName || _lastPassword != password)
-        {
+        MultiWorldPlugin.SlotNameEntry.Value = playerName;
+        MultiWorldPlugin.PasswordEntry.Value = password;
+        MultiWorldPlugin.ServerNameEntry.Value = address;
+        MultiWorldPlugin.PortEntry.Value = port;
 
-        }
-        _lastServerUrl = url;
-        _lastPlayerName = playerName;
-        _lastPassword = password;
+        string url = $"{address}:{port}";
         LoginResult result;
         string resultMessage;
         try

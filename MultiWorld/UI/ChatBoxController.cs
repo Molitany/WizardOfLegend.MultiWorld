@@ -144,7 +144,8 @@ public class ChatBoxController : MonoBehaviour
             return;
         }
 
-        string url = parameters[0];
+        string url = parameters[0].Split(':')[0];
+        string port = parameters[0].Split(':')[1];
         string name = "";
         string password = null;
         int passwordIndex = -1;
@@ -190,7 +191,7 @@ public class ChatBoxController : MonoBehaviour
         }
 
         WriteToChat($"Attempting to connect to {url} as {name}");
-        WriteToChat(MultiWorldPlugin.ArchipelagoManager.Connect(url, name, password));
+        WriteToChat(MultiWorldPlugin.ArchipelagoManager.Connect(url, port, name, password));
     }
 
     private void Disconnect(string[] parameters)

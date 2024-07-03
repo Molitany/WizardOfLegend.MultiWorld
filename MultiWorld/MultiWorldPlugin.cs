@@ -39,6 +39,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
     private static Dictionary<string, Outfit> Outfits { get; set; }
     private static Dictionary<string, Player.SkillState> Skills { get; set; }
     private static string gameDataFileName;
+    private static string gameVarsFileName;
     private bool FirstTime = true;
     private readonly List<string> possibleItems = [];
     private readonly List<string> possibleSkills = [];
@@ -93,7 +94,9 @@ public class MultiWorldPlugin : BaseUnityPlugin
             On.LootManager.GetSkillID += LootManager_GetSkillID;
             On.LootManager.GetLockedItemID += LootManager_GetLockedItemID;
             On.GameDataManager.Save += GameDataManager_Save;
+            On.GameDataManager.SaveGameVars += GameDataManager_SaveGameVars;
             On.GameDataManager.Load += GameDataManager_Load;
+            On.GameDataManager.LoadGameVars += GameDataManager_LoadGameVars;
 
             FirstTime = false;
         }
@@ -121,6 +124,23 @@ public class MultiWorldPlugin : BaseUnityPlugin
         orig(self);
     }
 
+    private void GameDataManager_LoadGameVars(On.GameDataManager.orig_LoadGameVars orig)
+    {
+
+        if (!ArchipelagoManager.Connected)
+            orig();
+        else
+        {
+            GameDataManager.gameVars = GameDataManager.LoadFromFile<GameVars>(gameVarsFileName);
+            GameDataManager.gameVars ??= new GameVars();
+        }
+    }
+
+    private void GameDataManager_SaveGameVars(On.GameDataManager.orig_SaveGameVars orig)
+    {
+        GameDataManager.SaveToFile(GameDataManager.gameVars, gameVarsFileName);
+    }
+
     private void GameDataManager_Load(On.GameDataManager.orig_Load orig)
     {
         if (!ArchipelagoManager.Connected)
@@ -132,11 +152,13 @@ public class MultiWorldPlugin : BaseUnityPlugin
             {
                 GameDataManager.gameData = new GameData();
             }
+            Log.LogWarning($"load signature: {GameDataManager.gameData.playerData[0].skills[3]}");
         }
     }
 
     private void GameDataManager_Save(On.GameDataManager.orig_Save orig, bool updateCurrentData, bool updatePlayerData)
     {
+        Log.LogMessage("saving gamedata");
         if (!ArchipelagoManager.Connected)
             orig(updateCurrentData, updatePlayerData);
         else
@@ -154,6 +176,8 @@ public class MultiWorldPlugin : BaseUnityPlugin
                 GameDataManager.gameData.SavePlayerData();
             }
             GameDataManager.SaveToFile(GameDataManager.gameData, gameDataFileName);
+            Log.LogWarning($"save signature: {GameDataManager.gameData.playerData[0].skills[3]}");
+
         }
     }
 
@@ -449,14 +473,9 @@ public class MultiWorldPlugin : BaseUnityPlugin
 
     private void ConnectButton()
     {
-        SlotNameEntry.Value = ArchipelagoManager.SlotName;
-        PasswordEntry.Value = ArchipelagoManager.Password;
-        ServerNameEntry.Value = ArchipelagoManager.Url;
-        PortEntry.Value = ArchipelagoManager.Port;
 
-        var url = $"{ArchipelagoManager.Url}:{ArchipelagoManager.Port}";
         Log.LogInfo($"Server {ArchipelagoManager.Url} Port: {ArchipelagoManager.Port} Slot: {ArchipelagoManager.SlotName} Password: {ArchipelagoManager.Password}");
-        Log.LogMessage(ArchipelagoManager.Connect(url, ArchipelagoManager.SlotName, ArchipelagoManager.Password));
+        Log.LogMessage(ArchipelagoManager.Connect(ArchipelagoManager.Url, ArchipelagoManager.Port, ArchipelagoManager.SlotName, ArchipelagoManager.Password));
     }
 
     private void CreateConnectUI()
@@ -534,27 +553,31 @@ public class MultiWorldPlugin : BaseUnityPlugin
     {
         MultiworldSettings = settings;
         gameDataFileName = $"{SlotNameEntry.Value}{PortEntry.Value}.gd";
-        var gameVarsFileName = $"{SlotNameEntry.Value}{PortEntry.Value}.gv";
+        gameVarsFileName = $"{SlotNameEntry.Value}{PortEntry.Value}.gv";
         Log.LogMessage("savefile path: " + GameDataManager.SavePathStr + gameDataFileName);
 
         if (!File.Exists(GameDataManager.SavePathStr + gameDataFileName))
         {
+            Log.LogMessage("Saving on connect");
             Instance.ResetGameData(gameDataFileName);
-            GameDataManager.SaveToFile(GameDataManager.gameVars, gameVarsFileName);
+            GameDataManager.SaveGameVars();
             Player.InitSkills();
             GameController.LoadLevel(Application.loadedLevelName);
         }
         else
         {
-            GameDataManager.gameData = GameDataManager.LoadFromFile<GameData>(gameDataFileName);
-            GameDataManager.gameVars = GameDataManager.LoadFromFile<GameVars>(gameVarsFileName);
+            Log.LogMessage("Loading on connect");
+            GameDataManager.Load();
+            GameDataManager.LoadGameVars();
+            Player.playerData = GameDataManager.gameData.playerData[0];
+            Player.EquipOutfit(Player.playerData.outfitName);
+            Player.GiveDesignatedItem(Player.playerData.designatedItemName);
 
-            for (int i = 0; i < GameDataManager.gameVars.p1Loadouts[0].arcanaIDs.Length; i++)
+            for (int i = 0; i < Player.assignedSkills.Length; i++)
             {
-                Log.LogMessage(GameDataManager.gameVars.p1Loadouts[0].arcanaIDs[i]);
-                Player.playerData.skills[i] = GameDataManager.gameVars.p1Loadouts[0].arcanaIDs[i];
+                Player.AssignSkillSlot(i, Player.playerData.skills[i], Player.playerData.signatureSkillIndex == i, true);
             }
-            GameController.LoadLevel(Application.loadedLevelName);
+            Player.lowerHUD.cooldownUI.RefreshEntries();
         }
 
     }

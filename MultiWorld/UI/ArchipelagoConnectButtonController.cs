@@ -1,5 +1,4 @@
 ﻿using MultiWorld.ArchipelagoClient;
-using System;
 using UnityEngine;
 using UnityEngine.UI;
 

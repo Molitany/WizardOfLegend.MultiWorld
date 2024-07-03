@@ -1,5 +1,4 @@
-﻿using Archipelago.MultiClient.Net.Helpers;
-using Archipelago.MultiClient.Net.Models;
+﻿using Archipelago.MultiClient.Net.Models;
 using System.Collections.Generic;
 using System.Linq;
 

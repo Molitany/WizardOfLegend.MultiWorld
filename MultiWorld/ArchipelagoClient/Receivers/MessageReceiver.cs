@@ -1,7 +1,6 @@
 ﻿using Archipelago.MultiClient.Net;
 using Archipelago.MultiClient.Net.Enums;
 using Archipelago.MultiClient.Net.Packets;
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;

@@ -1,8 +1,4 @@
-﻿using MultiWorld.Notification;
-using System;
-using UnityEngine.SocialPlatforms.Impl;
-
-namespace MultiWorld.DeathLink;
+﻿namespace MultiWorld.DeathLink;
 
 public enum DeathLinkStatus
 {

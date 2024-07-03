@@ -1,7 +1,5 @@
-﻿using Archipelago.MultiClient.Net.Models;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using UnityEngine.SocialPlatforms.Impl;
 
 namespace MultiWorld.ArchipelagoClient.Receivers;
 

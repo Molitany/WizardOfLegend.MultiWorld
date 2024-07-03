@@ -7,20 +7,18 @@ using MultiWorld.ArchipelagoClient.Receivers;
 using MultiWorld.Notification;
 using MultiWorld.UI;
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Text;
 
 namespace MultiWorld.ArchipelagoClient;
 
 public class ArchipelagoManager
 {
-    public static string SlotName = "Molitany";
-    public static string Password;
-    public static string Url = "localhost";
-    public static string Port = "55752";
+    public static string SlotName = MultiWorldPlugin.SlotNameEntry.Value;
+    public static string Password = MultiWorldPlugin.PasswordEntry.Value;
+    public static string Url = MultiWorldPlugin.ServerNameEntry.Value;
+    public static string Port = MultiWorldPlugin.PortEntry.Value;
 
     public bool Connected { get; private set; }
     public string ServerAddress => Connected ? _session.Socket.Uri.ToString() : string.Empty;
@@ -53,9 +51,13 @@ public class ArchipelagoManager
     public static readonly object receiverLock = new();
 
     #region Connection
+
     public string Connect(string url, string playerName, string password)
     {
-        GameUI.BroadcastNoticeMessage($"Connecting to Archipelago at {url}");
+        if (_lastServerUrl != url || _lastPlayerName != playerName || _lastPassword != password)
+        {
+
+        }
         _lastServerUrl = url;
         _lastPlayerName = playerName;
         _lastPassword = password;
@@ -92,8 +94,11 @@ public class ArchipelagoManager
 
         Connected = true;
         resultMessage = "Archipelago connection successful";
-        ArchipelagoConnectButtonController.ConnectPanel.SetActive(false);
-        ArchipelagoConnectButtonController.IsOpened = false;
+        if (ArchipelagoConnectButtonController.ConnectPanel != null)
+        {
+            ArchipelagoConnectButtonController.ConnectPanel.SetActive(false);
+            ArchipelagoConnectButtonController.IsOpened = false;
+        }
         OnConnect(result as LoginSuccessful, playerName);
         return resultMessage;
     }
@@ -103,8 +108,11 @@ public class ArchipelagoManager
         GameSettings settings = new()
         {
             DeathLinkEnabled = loginSuccessful.SlotData["deathLink"].ToString() == "1",
+            EarlyChaos = loginSuccessful.SlotData["earlyChaos"].ToString() == "1",
+            Goal = (GameSettings.Goals)Enum.Parse(typeof(GameSettings.Goals), loginSuccessful.SlotData["goal"].ToString()),
             PlayerName = playerName,
         };
+
         //Deathlink
         _deathLink = _session.CreateDeathLinkService();
         _deathLink.OnDeathLinkReceived += ReceivedDeath;
@@ -158,6 +166,7 @@ public class ArchipelagoManager
             _messageReceiver.ClearQueue();
         }
     }
+
     #endregion
 
     #region Death link
@@ -165,20 +174,17 @@ public class ArchipelagoManager
     public void SendDeath()
     {
         if (Connected)
-        {
             _deathLink.SendDeathLink(new Archipelago.MultiClient.Net.BounceFeatures.DeathLink.DeathLink(MultiWorldPlugin.MultiworldSettings.PlayerName));
-        }
     }
 
     public void EnableDeathLink(bool deathLinkEnabled)
     {
-        if (Connected)
-        {
-            if (deathLinkEnabled)
-                _deathLink.EnableDeathLink();
-            else
-                _deathLink.DisableDeathLink();
-        }
+        if (!Connected)
+            return;
+        if (deathLinkEnabled)
+            _deathLink.EnableDeathLink();
+        else
+            _deathLink.DisableDeathLink();
     }
 
     private void ReceivedDeath(Archipelago.MultiClient.Net.BounceFeatures.DeathLink.DeathLink deathLink)
@@ -188,6 +194,19 @@ public class ArchipelagoManager
 
     #endregion Death link
 
+    #region Locations, items, & goal
+
+    public void SendGoal()
+    {
+        if (!Connected)
+            return;
+        var packet = new StatusUpdatePacket
+        {
+            Status = ArchipelagoClientState.ClientGoal
+        };
+        _session.Socket.SendPacket(packet);
+    }
+
     public bool LocationIdExists(long archpelagoId, out string locationId)
     {
         locationId = GetLocationNameFromId(archpelagoId);
@@ -196,14 +215,13 @@ public class ArchipelagoManager
 
     public void SendMessage(string message)
     {
-        if (Connected)
+        if (!Connected)
+            return;
+        var packet = new SayPacket
         {
-            var packet = new SayPacket
-            {
-                Text = message
-            };
-            _session.Socket.SendPacket(packet);
-        }
+            Text = message
+        };
+        _session.Socket.SendPacket(packet);
     }
 
     public string GetItemNameFromId(long itemId) => _session.Items.GetItemName(itemId);
@@ -242,6 +260,8 @@ public class ArchipelagoManager
             MultiWorldPlugin.Log.LogError($"{archipelagoId} not found in groups!");
         return type;
     }
+
+    #endregion
 
     public void DisplayNoticeFromArchipelagoId(string archipelagoId)
     {

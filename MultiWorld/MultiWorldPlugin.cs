@@ -9,8 +9,7 @@ using UnityEngine.SceneManagement;
 using MultiWorld.DeathLink;
 using MultiWorld.Notification;
 using System.Text;
-using System.Collections.ObjectModel;
-using System;
+using System.IO;
 
 namespace MultiWorld;
 
@@ -22,8 +21,14 @@ public class MultiWorldPlugin : BaseUnityPlugin
     public static ArchipelagoManager ArchipelagoManager { get; private set; }
     public static DeathLinkManager DeathLinkManager { get; private set; }
     public static GameSettings MultiworldSettings { get; private set; }
+
+
     public static NotificationManager NotificationManager { get; private set; }
     public static ChatBoxController ChatBoxController { get; private set; }
+    public static BepInEx.Configuration.ConfigEntry<string> SlotNameEntry { get; set; }
+    public static BepInEx.Configuration.ConfigEntry<string> ServerNameEntry { get; set; }
+    public static BepInEx.Configuration.ConfigEntry<string> PortEntry { get; set; }
+    public static BepInEx.Configuration.ConfigEntry<string> PasswordEntry { get; set; }
     public static List<string> ChatLines = [];
     public static bool InGame => GameController.activePlayers.Any();
     public static Player Player;
@@ -33,6 +38,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
     private static Dictionary<string, GameData.StoredItemData> Relics { get; set; }
     private static Dictionary<string, Outfit> Outfits { get; set; }
     private static Dictionary<string, Player.SkillState> Skills { get; set; }
+    private static string gameDataFileName;
     private bool FirstTime = true;
     private readonly List<string> possibleItems = [];
     private readonly List<string> possibleSkills = [];
@@ -57,13 +63,24 @@ public class MultiWorldPlugin : BaseUnityPlugin
         On.Outfit.UnlockOutfit += Outfit_UnlockOutfit;
         On.GameController.Awake += GameController_Awake;
         On.OutfitMerchantNpc.CreateOutfitStoreItem += OutfitMerchantNpc_CreateOutfitStoreItem;
+        On.FinalBoss.FinalBossDeadState.OnBossDefeat += FinalBossDeadState_OnBossDefeat;
+    }
+
+    private void FinalBossDeadState_OnBossDefeat(On.FinalBoss.FinalBossDeadState.orig_OnBossDefeat orig, FinalBoss.FinalBossDeadState self)
+    {
+        orig(self);
+        if (MultiworldSettings.Goal == GameSettings.Goals.DefeatSura)
+        {
+            Log.LogMessage($"Completing goal {GameSettings.Goals.DefeatSura}\"");
+            ArchipelagoManager.SendGoal();
+        }
     }
 
     private void OutfitMerchantNpc_CreateOutfitStoreItem(On.OutfitMerchantNpc.orig_CreateOutfitStoreItem orig, OutfitMerchantNpc self, Vector2 givenPosition, string givenID)
     {
         if (possibleOutfits.Count > 0)
         {
-            var text = possibleOutfits[UnityEngine.Random.Range(0, possibleOutfits.Count)];
+            var text = possibleOutfits[Random.Range(0, possibleOutfits.Count)];
             possibleOutfits.Remove(text);
             orig(self, givenPosition, text);
         }
@@ -75,6 +92,9 @@ public class MultiWorldPlugin : BaseUnityPlugin
         {
             On.LootManager.GetSkillID += LootManager_GetSkillID;
             On.LootManager.GetLockedItemID += LootManager_GetLockedItemID;
+            On.GameDataManager.Save += GameDataManager_Save;
+            On.GameDataManager.Load += GameDataManager_Load;
+
             FirstTime = false;
         }
 
@@ -101,12 +121,48 @@ public class MultiWorldPlugin : BaseUnityPlugin
         orig(self);
     }
 
+    private void GameDataManager_Load(On.GameDataManager.orig_Load orig)
+    {
+        if (!ArchipelagoManager.Connected)
+            orig();
+        else
+        {
+            GameDataManager.gameData = GameDataManager.LoadFromFile<GameData>(gameDataFileName);
+            if (!GameDataManager.CheckData(GameDataManager.gameData))
+            {
+                GameDataManager.gameData = new GameData();
+            }
+        }
+    }
+
+    private void GameDataManager_Save(On.GameDataManager.orig_Save orig, bool updateCurrentData, bool updatePlayerData)
+    {
+        if (!ArchipelagoManager.Connected)
+            orig(updateCurrentData, updatePlayerData);
+        else
+        {
+            if (GameDataManager.gameData == null)
+            {
+                return;
+            }
+            if (updateCurrentData)
+            {
+                GameDataManager.gameData.UpdateData();
+            }
+            if (updatePlayerData)
+            {
+                GameDataManager.gameData.SavePlayerData();
+            }
+            GameDataManager.SaveToFile(GameDataManager.gameData, gameDataFileName);
+        }
+    }
+
     private string LootManager_GetLockedItemID(On.LootManager.orig_GetLockedItemID orig)
     {
         string text = string.Empty;
         if (possibleItems.Count > 0)
         {
-            text = possibleItems[UnityEngine.Random.Range(0, possibleItems.Count)];
+            text = possibleItems[Random.Range(0, possibleItems.Count)];
             possibleItems.Remove(text);
         }
         return text;
@@ -119,16 +175,16 @@ public class MultiWorldPlugin : BaseUnityPlugin
         {
             Log.LogMessage(possibleSignatures.Count);
             if (possibleSignatures.Count > 0)
-                text = possibleSignatures[UnityEngine.Random.Range(0, possibleSignatures.Count)];
+                text = possibleSignatures[Random.Range(0, possibleSignatures.Count)];
         }
         else if (locked)
         {
             if (possibleSkills.Count > 0)
-                text = possibleSkills[UnityEngine.Random.Range(0, possibleSkills.Count)];
+                text = possibleSkills[Random.Range(0, possibleSkills.Count)];
         }
         else if (LootManager.availableSkillList.Count > 0)
         {
-            text = LootManager.availableSkillList[UnityEngine.Random.Range(0, LootManager.availableSkillList.Count)];
+            text = LootManager.availableSkillList[Random.Range(0, LootManager.availableSkillList.Count)];
         }
         if (text != string.Empty)
         {
@@ -218,7 +274,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
     private void LoadingScreen_StopLoading(On.LoadingScreen.orig_StopLoading orig, LoadingScreen self)
     {
         orig(self);
-        if (!GameObject.Find("ChatInput"))
+        if (!GameObject.Find("ChatBoxController"))
             CreateChatBoxtUI();
     }
     private void Player_DeadState_OnEnter(On.Player.DeadState.orig_OnEnter orig, Player.DeadState self)
@@ -264,6 +320,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
 
     public void Awake()
     {
+        CreateConfigurations();
         Instance = this;
         ArchipelagoManager = new();
         DeathLinkManager = new();
@@ -274,6 +331,10 @@ public class MultiWorldPlugin : BaseUnityPlugin
     }
 
 
+    public void Start()
+    {
+
+    }
 
     // Create a chat to receive and send AP commands
     public void Update()
@@ -335,6 +396,8 @@ public class MultiWorldPlugin : BaseUnityPlugin
         else if (Input.GetKeyDown(KeyCode.F3))
         {
             Player.platWallet.balance = 99999;
+            Player.health.invulnerable = !Player.health.invulnerable;
+            Player.goldWallet.balance = 99999;
         }
 
         if (Player)
@@ -350,7 +413,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
             Log.LogMessage($"firing the UI");
             if (!ArchipelagoManager.Connected)
                 CreateConnectUI();
-            if (!GameObject.Find("ChatInput"))
+            if (!GameObject.Find("ChatBoxController"))
                 CreateChatBoxtUI();
         }
         ArchipelagoManager.UpdateAllReceivers();
@@ -386,6 +449,11 @@ public class MultiWorldPlugin : BaseUnityPlugin
 
     private void ConnectButton()
     {
+        SlotNameEntry.Value = ArchipelagoManager.SlotName;
+        PasswordEntry.Value = ArchipelagoManager.Password;
+        ServerNameEntry.Value = ArchipelagoManager.Url;
+        PortEntry.Value = ArchipelagoManager.Port;
+
         var url = $"{ArchipelagoManager.Url}:{ArchipelagoManager.Port}";
         Log.LogInfo($"Server {ArchipelagoManager.Url} Port: {ArchipelagoManager.Port} Slot: {ArchipelagoManager.SlotName} Password: {ArchipelagoManager.Password}");
         Log.LogMessage(ArchipelagoManager.Connect(url, ArchipelagoManager.SlotName, ArchipelagoManager.Password));
@@ -465,6 +533,69 @@ public class MultiWorldPlugin : BaseUnityPlugin
     public static void OnConnect(GameSettings settings)
     {
         MultiworldSettings = settings;
+        gameDataFileName = $"{SlotNameEntry.Value}{PortEntry.Value}.gd";
+        var gameVarsFileName = $"{SlotNameEntry.Value}{PortEntry.Value}.gv";
+        Log.LogMessage("savefile path: " + GameDataManager.SavePathStr + gameDataFileName);
+
+        if (!File.Exists(GameDataManager.SavePathStr + gameDataFileName))
+        {
+            Instance.ResetGameData(gameDataFileName);
+            GameDataManager.SaveToFile(GameDataManager.gameVars, gameVarsFileName);
+            Player.InitSkills();
+            GameController.LoadLevel(Application.loadedLevelName);
+        }
+        else
+        {
+            GameDataManager.gameData = GameDataManager.LoadFromFile<GameData>(gameDataFileName);
+            GameDataManager.gameVars = GameDataManager.LoadFromFile<GameVars>(gameVarsFileName);
+
+            for (int i = 0; i < GameDataManager.gameVars.p1Loadouts[0].arcanaIDs.Length; i++)
+            {
+                Log.LogMessage(GameDataManager.gameVars.p1Loadouts[0].arcanaIDs[i]);
+                Player.playerData.skills[i] = GameDataManager.gameVars.p1Loadouts[0].arcanaIDs[i];
+            }
+            GameController.LoadLevel(Application.loadedLevelName);
+        }
+
+    }
+    private void ResetGameData(string saveFileName)
+    {
+        Log.LogWarning("RESET GAME DATA");
+        var gameData = GameDataManager.gameData;
+        gameData.chaosSpellsAvailable = false;
+        gameData.gameStats.Reset();
+        gameData.ResetPlayerData();
+        gameData.ResetOutfitData();
+        gameData.ResetNPCData();
+        gameData.ResetSkillData();
+        gameData.ResetItemData();
+        GameDataManager.ResetGameVars();
+        GameDataManager.gameData.UnlockStartingSkillsAndItems();
+        GameDataManager.SaveToFile(GameDataManager.gameData, saveFileName);
+        GameDataManager.Save(true, false);
     }
 
+    private void CreateConfigurations()
+    {
+        SlotNameEntry = Config.Bind(
+            "SlotName",
+            "slotName",
+            "",
+            "Change the default slot name");
+        ServerNameEntry = Config.Bind(
+            "ServerName",
+            "serverName",
+            "archipelago.gg",
+            "Change the default server name");
+        PortEntry = Config.Bind(
+            "Port",
+            "port",
+            "38281",
+            "Change the default port");
+        PasswordEntry = Config.Bind(
+            "Password",
+            "password",
+            "",
+            "Change the default password");
+    }
 }

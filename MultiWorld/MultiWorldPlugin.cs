@@ -70,10 +70,21 @@ public class MultiWorldPlugin : BaseUnityPlugin
     private void FinalBossDeadState_OnBossDefeat(On.FinalBoss.FinalBossDeadState.orig_OnBossDefeat orig, FinalBoss.FinalBossDeadState self)
     {
         orig(self);
-        if (MultiworldSettings.Goal == GameSettings.Goals.DefeatSura)
+        switch (MultiworldSettings.Goal)
         {
-            Log.LogMessage($"Completing goal {GameSettings.Goals.DefeatSura}\"");
-            ArchipelagoManager.SendGoal();
+            case GameSettings.Goals.DefeatSura:
+                Log.LogMessage($"Completing goal {GameSettings.Goals.DefeatSura}\"");
+                ArchipelagoManager.SendGoal();
+                break;
+            case GameSettings.Goals.DefeatSuperSura:
+                if (self.parent.superMode)
+                {
+                    Log.LogMessage($"Completing goal {GameSettings.Goals.DefeatSura}\"");
+                    ArchipelagoManager.SendGoal();
+                }
+                break;
+            default:
+                break;
         }
     }
 
@@ -106,7 +117,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
             possibleSkills.AddRange(LootManager.completeSkillList.Except(ArchipelagoManager.FoundLocations[NotificationManager.NoticeType.Spell])
                                                                  .Except(Globals.startingSkillIDList)
                                                                  .Except(Globals.startingOverdriveIDList));
-
+            //Fix signatures, multiple duplicates spawn
             possibleSignatures.AddRange(LootManager.completeSkillList.Except(ArchipelagoManager.FoundLocations[NotificationManager.NoticeType.Signature])
                                                                      .Except(Globals.startingSkillIDList)
                                                                      .Except(Globals.startingOverdriveIDList)
@@ -152,7 +163,6 @@ public class MultiWorldPlugin : BaseUnityPlugin
             {
                 GameDataManager.gameData = new GameData();
             }
-            Log.LogWarning($"load signature: {GameDataManager.gameData.playerData[0].skills[3]}");
         }
     }
 
@@ -176,7 +186,6 @@ public class MultiWorldPlugin : BaseUnityPlugin
                 GameDataManager.gameData.SavePlayerData();
             }
             GameDataManager.SaveToFile(GameDataManager.gameData, gameDataFileName);
-            Log.LogWarning($"save signature: {GameDataManager.gameData.playerData[0].skills[3]}");
 
         }
     }
@@ -422,6 +431,11 @@ public class MultiWorldPlugin : BaseUnityPlugin
             Player.platWallet.balance = 99999;
             Player.health.invulnerable = !Player.health.invulnerable;
             Player.goldWallet.balance = 99999;
+            GameController.debugMenu.Toggle();
+        }
+        else if (Input.GetKeyDown(KeyCode.F4))
+        {
+            GameController.LoadLevel("FinalBossLevel");
         }
 
         if (Player)
@@ -562,6 +576,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
             Instance.ResetGameData(gameDataFileName);
             GameDataManager.SaveGameVars();
             Player.InitSkills();
+            Player.platWallet.balance = 0;
             GameController.LoadLevel(Application.loadedLevelName);
         }
         else
@@ -570,6 +585,8 @@ public class MultiWorldPlugin : BaseUnityPlugin
             GameDataManager.Load();
             GameDataManager.LoadGameVars();
             Player.playerData = GameDataManager.gameData.playerData[0];
+            Player.platWallet.balance = GameDataManager.gameData.platinumWallet.balance;
+            Log.LogMessage(Player.playerData.outfitName);
             Player.EquipOutfit(Player.playerData.outfitName);
             Player.GiveDesignatedItem(Player.playerData.designatedItemName);
 

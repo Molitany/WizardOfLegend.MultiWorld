@@ -67,6 +67,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
         On.FinalBoss.FinalBossDeadState.OnBossDefeat += FinalBossDeadState_OnBossDefeat;
     }
 
+
     private void FinalBossDeadState_OnBossDefeat(On.FinalBoss.FinalBossDeadState.orig_OnBossDefeat orig, FinalBoss.FinalBossDeadState self)
     {
         orig(self);
@@ -302,6 +303,8 @@ public class MultiWorldPlugin : BaseUnityPlugin
     private void Player_HandleSkillUnlock(On.Player.orig_HandleSkillUnlock_string_bool orig, Player self, string givenID, bool isSignature)
     {
         // Disable the original unlocking of skill 
+        if (GameController.currentLevelName.Contains("Boss"))
+            ArchipelagoManager.SendLocation(givenID + (isSignature ? "Signature" : ""));
     }
 
     private void LoadingScreen_StopLoading(On.LoadingScreen.orig_StopLoading orig, LoadingScreen self)
@@ -342,9 +345,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
     private void NextLevelLoader_LoadNextLevel(On.NextLevelLoader.orig_LoadNextLevel orig, NextLevelLoader self)
     {
         if (SceneManager.GetActiveScene().name.Contains("BossLevel") && GameController.tierCount + 1 > allowedTier)
-        {
             Player.fsm.QueueChangeState("Dead");
-        }
         else
             orig(self);
     }
@@ -433,11 +434,15 @@ public class MultiWorldPlugin : BaseUnityPlugin
         }
         else if (Input.GetKeyDown(KeyCode.F4))
         {
-            GameController.LoadLevel("FinalBossLevel");
+            GameController.LoadLevel(GameController.NextLevelName+"BossLevel");
         }
-        else if ( Input.GetKeyDown(KeyCode.F5))
+        else if (Input.GetKeyDown(KeyCode.F5))
         {
             GameController.debugMenu.Toggle();
+        }
+        else if (Input.GetKeyDown(KeyCode.F6))
+        {
+            Log.LogInfo(ChaosBundle.Get<TextAsset>("Assets/Data/Loot/LootTable.json").text);
         }
 
         if (Player)
@@ -489,7 +494,6 @@ public class MultiWorldPlugin : BaseUnityPlugin
 
     private void ConnectButton()
     {
-
         Log.LogInfo($"Server {ArchipelagoManager.Url} Port: {ArchipelagoManager.Port} Slot: {ArchipelagoManager.SlotName} Password: {ArchipelagoManager.Password}");
         Log.LogMessage(ArchipelagoManager.Connect(ArchipelagoManager.Url, ArchipelagoManager.Port, ArchipelagoManager.SlotName, ArchipelagoManager.Password));
     }

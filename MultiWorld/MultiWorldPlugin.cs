@@ -255,7 +255,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
 
     private void UnlockNotifier_Notify(On.UnlockNotifier.orig_Notify orig, UnlockNotifier self, string givenID, UnlockNotifier.NoticeType givenType)
     {
-        // Disable normal unlock notifications
+        // Disable original unlock notifications
     }
 
     private bool ItemStoreItem_BuyWithPlat(On.ItemStoreItem.orig_BuyWithPlat orig, ItemStoreItem self)
@@ -301,7 +301,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
 
     private void Player_HandleSkillUnlock(On.Player.orig_HandleSkillUnlock_string_bool orig, Player self, string givenID, bool isSignature)
     {
-        // Disable the unlocking of skill naturally
+        // Disable the original unlocking of skill 
     }
 
     private void LoadingScreen_StopLoading(On.LoadingScreen.orig_StopLoading orig, LoadingScreen self)
@@ -576,6 +576,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
             Instance.ResetGameData(gameDataFileName);
             GameDataManager.SaveGameVars();
             Player.InitSkills();
+            Player.EquipOutfit("Hope");
             Player.platWallet.balance = 0;
             GameController.LoadLevel(Application.loadedLevelName);
         }

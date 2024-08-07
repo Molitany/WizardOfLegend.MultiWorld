@@ -343,10 +343,10 @@ public class MultiWorldPlugin : BaseUnityPlugin
     {
         if (SceneManager.GetActiveScene().name.Contains("BossLevel") && GameController.tierCount + 1 > allowedTier)
         {
-            self.nextLevelName = "Hub";
-            self.showLevelSummary = true;
+            Player.fsm.QueueChangeState("Dead");
         }
-        orig(self);
+        else
+            orig(self);
     }
 
     #endregion
@@ -429,13 +429,15 @@ public class MultiWorldPlugin : BaseUnityPlugin
         else if (Input.GetKeyDown(KeyCode.F3))
         {
             Player.platWallet.balance = 99999;
-            Player.health.invulnerable = !Player.health.invulnerable;
             Player.goldWallet.balance = 99999;
-            GameController.debugMenu.Toggle();
         }
         else if (Input.GetKeyDown(KeyCode.F4))
         {
             GameController.LoadLevel("FinalBossLevel");
+        }
+        else if ( Input.GetKeyDown(KeyCode.F5))
+        {
+            GameController.debugMenu.Toggle();
         }
 
         if (Player)
@@ -577,7 +579,7 @@ public class MultiWorldPlugin : BaseUnityPlugin
             GameDataManager.SaveGameVars();
             Player.InitSkills();
             Player.EquipOutfit("Hope");
-            Player.platWallet.balance = 0;
+            Player.platWallet.balance = Player.platWallet.balance != 100 ? 0 : 100;
             GameController.LoadLevel(Application.loadedLevelName);
         }
         else
